@@ -7,12 +7,7 @@ import type { APIGatewayProxyResultV2 } from 'aws-lambda';
 
 export const handleError = (error: unknown, requestId: string): APIGatewayProxyResultV2 => {
   if (error instanceof AppError) {
-    logger.warn('AppError capturado', {
-      code: error.code,
-      message: error.message,
-      statusCode: error.statusCode,
-      requestId,
-    });
+    logger.warn('AppError procesado', { code: error.code, statusCode: error.statusCode, message: error.message, requestId });
     return buildErrorResponse(error.statusCode, error.code, error.message, requestId);
   }
 
@@ -28,10 +23,5 @@ export const handleError = (error: unknown, requestId: string): APIGatewayProxyR
     requestId,
   });
 
-  return buildErrorResponse(
-    500,
-    ErrorCode.INTERNAL_ERROR,
-    'Ocurrió un error interno en el servidor.',
-    requestId
-  );
+  return buildErrorResponse(500, ErrorCode.INTERNAL_ERROR, 'Ocurrió un error interno en el servidor.', requestId);
 };

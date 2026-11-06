@@ -1,7 +1,7 @@
 import type { APIGatewayProxyResultV2 } from 'aws-lambda';
 import { ErrorCode } from '../errors/error-codes.js';
 
-const COMMON_HEADERS = {
+const SECURITY_HEADERS = {
   'Content-Type': 'application/json',
   'Cache-Control': 'no-store, no-cache, must-revalidate',
   'X-Content-Type-Options': 'nosniff',
@@ -9,27 +9,15 @@ const COMMON_HEADERS = {
   'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
 };
 
-export const buildJsonResponse = (
+export const buildSuccessResponse = <T>(
   statusCode: number,
-  body: unknown,
-  headers: Record<string, string> = {}
+  data: T
 ): APIGatewayProxyResultV2 => {
   return {
     statusCode,
-    headers: {
-      ...COMMON_HEADERS,
-      ...headers,
-    },
-    body: JSON.stringify(body),
+    headers: SECURITY_HEADERS,
+    body: JSON.stringify(data),
   };
-};
-
-export const buildSuccessResponse = <T>(
-  statusCode: number,
-  data: T,
-  headers: Record<string, string> = {}
-): APIGatewayProxyResultV2 => {
-  return buildJsonResponse(statusCode, data, headers);
 };
 
 export const buildErrorResponse = (
@@ -38,9 +26,13 @@ export const buildErrorResponse = (
   message: string,
   requestId: string
 ): APIGatewayProxyResultV2 => {
-  return buildJsonResponse(statusCode, {
-    code,
-    message,
-    requestId,
-  });
+  return {
+    statusCode,
+    headers: SECURITY_HEADERS,
+    body: JSON.stringify({
+      code,
+      message,
+      requestId,
+    }),
+  };
 };
