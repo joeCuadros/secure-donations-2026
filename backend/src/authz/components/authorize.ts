@@ -1,0 +1,46 @@
+import type { APIGatewayProxyEventV2 } from 'aws-lambda';
+import type { AuthenticatedUser } from '../../shared/types/api.types.js';
+import { AppError } from '../../shared/errors/app-error.js';
+import { logger } from '../../shared/logger/logger.js';
+
+export const extractUserContext = (event: APIGatewayProxyEventV2): AuthenticatedUser => {
+  const authorizer = event.requestContext.authorizer;
+
+  if (!authorizer || !authorizer.jwt || !authorizer.jwt.claims) {
+    logger.warn('Intento de acceso sin claims JWT válidos');
+    throw AppError.unauthorized('Token no válido o ausente');
+  }
+
+  const claims = authorizer.jwt.claims;
+  const sub = claims['sub'] as string;
+
+  if (!sub) {
+    throw AppError.unauthorized('El claim sub es obligatorio');
+  }
+
+  // Parsear grupos
+  let groups: string[] = [];
+  const rawGroups = claims['cognito:groups'];
+  if (Array.isArray(rawGroups)) {
+    groups = rawGroups.map(String);
+  } else if (typeof rawGroups === 'string') {
+    groups = rawGroups.split(',').map((g) => g.trim());
+  }
+
+  // Parsear scopes
+  let scopes: string[] = [];
+  const rawScope = claims['scope'];
+  if (typeof rawScope === 'string') {
+    scopes = rawScope.split(' ').filter(Boolean);
+  } else if (Array.isArray(rawScope)) {
+    scopes = rawScope.map(String);
+  }
+
+  return {
+    sub,
+    email: (claims['email'] as string) || undefined,
+    groups,
+    scopes,
+    username: (claims['username'] as string) || (claims['cognito:username'] as string) || undefined,
+  };
+};

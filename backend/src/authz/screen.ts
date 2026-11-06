@@ -1,0 +1,1 @@
+export { authzHook } from './hook.js';
