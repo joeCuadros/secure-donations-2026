@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "esbuild src/**/*.ts --outdir=dist --bundle --platform=node --target=node24 --format=esm --sourcemap && node -e \"fs.writeFileSync('dist/package.json', '{\\\"name\\\":\\\"backend-dist\\\",\\\"version\\\":\\\"1.0.0\\\",\\\"type\\\":\\\"module\\\"}')\"",
+    "build": "rm -rf dist && esbuild src/**/*.ts --outdir=dist --bundle --platform=node --target=node24 --format=cjs --sourcemap",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
