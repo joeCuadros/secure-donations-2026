@@ -1,19 +1,27 @@
 {
-  "name": "backend",
+  "name": "secure-donations-backend",
   "version": "1.0.0",
   "type": "module",
-  "description": "",
+  "description": "Backend Serverless para Plataforma de Donaciones Seguras 2026", 
   "main": "index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "esbuild src/**/*.ts --outdir=dist --bundle --platform=node --target=node24 --format=esm --sourcemap",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "dev": "tsx watch src/index.ts"
+    "test:coverage": "vitest run --coverage",
+    "lint": "tsc --noEmit"
   },
-  "keywords": [ ],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "aws",
+    "serverless",
+    "lambda",
+    "dynamodb",
+    "zero-trust",
+    "typescript"
+  ],
+  "author": "UNSA - Tópicos Avanzados en Ingeniería de Software",
+  "license": "MIT",
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.1163.0",
     "@aws-sdk/client-dynamodb": "^3.1163.0",
