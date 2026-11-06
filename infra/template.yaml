@@ -1,0 +1,466 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Plataforma de Donaciones Seguras 2026 - Infraestructura Serverless AWS SAM
+  Optimizada para la Capa Gratuita de AWS (Stage Academic/Prod).
+
+Parameters:
+  StageName:
+    Type: String
+    Default: academic
+    AllowedValues:
+      - academic
+      - staging
+      - prod
+    Description: Entorno de despliegue de la infraestructura
+
+  AllowedCorsOrigin:
+    Type: String
+    Default: "*"
+    Description: Origen permitido para solicitudes CORS
+
+Globals:
+  Function:
+    Timeout: 10
+    MemorySize: 256
+    Runtime: nodejs24.x
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        STAGE: !Ref StageName
+        PROJECTS_TABLE: !Ref ProjectsTable
+        DONATIONS_TABLE: !Ref DonationsTable
+        IDEMPOTENCY_TABLE: !Ref IdempotencyTable
+        AUDIT_TABLE: !Ref AuditEventsTable
+        COGNITO_USER_POOL_ID: !Ref CognitoUserPool
+        COGNITO_CLIENT_ID: !Ref CognitoUserPoolClient
+        LOG_LEVEL: info
+
+Resources:
+  # ===================================================================
+  # 1. COGNITO USER POOL, DOMAIN, GROUPS, SCOPES & CLIENT
+  # ===================================================================
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub secure-donations-user-pool-${StageName}
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      MfaConfiguration: OPTIONAL
+      EnabledMfas:
+        - SOFTWARE_TOKEN_MFA
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+
+  CognitoUserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      Domain: !Sub secure-donations-${StageName}-${AWS::AccountId}
+      UserPoolId: !Ref CognitoUserPool
+
+  CognitoGestorGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: GESTOR
+      UserPoolId: !Ref CognitoUserPool
+      Description: Grupo con permisos de gestión de proyectos de donación
+
+  CognitoDonanteGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: DONANTE
+      UserPoolId: !Ref CognitoUserPool
+      Description: Grupo con permisos para registrar e intencionar donaciones
+
+  CognitoAuditorGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: AUDITOR
+      UserPoolId: !Ref CognitoUserPool
+      Description: Grupo con permisos de consulta de auditoría y trazabilidad
+
+  CognitoResourceServer:
+    Type: AWS::Cognito::UserPoolResourceServer
+    Properties:
+      Identifier: api
+      Name: Secure Donations Custom Scopes
+      UserPoolId: !Ref CognitoUserPool
+      Scopes:
+        - ScopeName: projects.write
+          ScopeDescription: Permite crear y publicar proyectos de donación
+        - ScopeName: donations.write
+          ScopeDescription: Permite crear e intencionar donaciones
+        - ScopeName: donations.read
+          ScopeDescription: Permite consultar historial propio de donaciones
+        - ScopeName: audit.read
+          ScopeDescription: Permite consultar logs de auditoría
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub secure-donations-client-${StageName}
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthScopes:
+        - openid
+        - email
+        - profile
+        - api/projects.write
+        - api/donations.write
+        - api/donations.read
+        - api/audit.read
+      CallbackURLs:
+        - http://localhost:5173/callback
+      LogoutURLs:
+        - http://localhost:5173/login
+      SupportedIdentityProviders:
+        - COGNITO
+
+  # ===================================================================
+  # 2. API GATEWAY HTTP API & DEFAULT JWT AUTHORIZER (PEP)
+  # ===================================================================
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref StageName
+      CorsConfiguration:
+        AllowOrigins:
+          - !Ref AllowedCorsOrigin
+        AllowHeaders:
+          - Authorization
+          - Content-Type
+          - Idempotency-Key
+        AllowMethods:
+          - GET
+          - POST
+          - PATCH
+          - OPTIONS
+      Auth:
+        DefaultAuthorizer: CognitoJwtAuthorizer
+        Authorizers:
+          CognitoJwtAuthorizer:
+            AuthorizationScopes:
+              - openid
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${CognitoUserPool}
+              audience:
+                - !Ref CognitoUserPoolClient
+            IdentitySource: $request.header.Authorization
+
+  # ===================================================================
+  # 3. TABLAS DYNAMODB (CAPA GRATUITA)
+  # ===================================================================
+  ProjectsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub Projects-${StageName}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: projectId
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: projectId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: status-createdAt
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  DonationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub Donations-${StageName}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: donationId
+          AttributeType: S
+        - AttributeName: donorSub
+          AttributeType: S
+        - AttributeName: createdAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: donationId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: donorSub-createdAt
+          KeySchema:
+            - AttributeName: donorSub
+              KeyType: HASH
+            - AttributeName: createdAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  IdempotencyTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub Idempotency-${StageName}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+
+  AuditEventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub AuditEvents-${StageName}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: eventType
+          AttributeType: S
+        - AttributeName: timestampEventId
+          AttributeType: S
+        - AttributeName: gsi1pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: eventType
+          KeyType: HASH
+        - AttributeName: timestampEventId
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: AllAuditLogsIndex
+          KeySchema:
+            - AttributeName: gsi1pk
+              KeyType: HASH
+            - AttributeName: timestampEventId
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  # ===================================================================
+  # 4. FUNCIONES LAMBDA DE DOMINIO Y RUTAS
+  # ===================================================================
+
+  ListProjectsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: dist/projects/api.listProjectsHandler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProjectsTable
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /v1/projects
+            Method: GET
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: NONE
+
+  GetProjectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: dist/projects/api.getProjectHandler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProjectsTable
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /v1/projects/{projectId}
+            Method: GET
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: NONE
+
+  GetProjectStatsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: dist/projects/api.getProjectStatsHandler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProjectsTable
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /v1/projects/{projectId}/stats
+            Method: GET
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: NONE
+
+  CreateProjectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: dist/projects/api.createProjectHandler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProjectsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditEventsTable
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /v1/projects
+            Method: POST
+            ApiId: !Ref HttpApi
+            Auth:
+              AuthorizationScopes:
+                - api/projects.write
+
+  PublishProjectFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: dist/projects/api.publishProjectHandler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProjectsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditEventsTable
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /v1/projects/{projectId}/publish
+            Method: PATCH
+            ApiId: !Ref HttpApi
+            Auth:
+              AuthorizationScopes:
+                - api/projects.write
+
+  CreateDonationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: dist/donations/api.createDonationHandler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DonationsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref IdempotencyTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProjectsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditEventsTable
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /v1/donations
+            Method: POST
+            ApiId: !Ref HttpApi
+            Auth:
+              AuthorizationScopes:
+                - api/donations.write
+
+  SimulateDonationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: dist/donations/api.simulateDonationHandler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref DonationsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProjectsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AuditEventsTable
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /v1/donations/{donationId}/simulate
+            Method: POST
+            ApiId: !Ref HttpApi
+            Auth:
+              AuthorizationScopes:
+                - api/donations.write
+
+  ListMyDonationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: dist/donations/api.listMyDonationsHandler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref DonationsTable
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /v1/donations/me
+            Method: GET
+            ApiId: !Ref HttpApi
+            Auth:
+              AuthorizationScopes:
+                - api/donations.read
+
+  ListAuditLogsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../
+      Handler: dist/audit/api.listAuditLogsHandler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref AuditEventsTable
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /v1/audit
+            Method: GET
+            ApiId: !Ref HttpApi
+            Auth:
+              AuthorizationScopes:
+                - api/audit.read
+
+# ===================================================================
+# OUTPUTS: VALORES AUTO-GENERADOS PARA COPIAR A TU ARCHIVO .ENV
+# ===================================================================
+Outputs:
+  ApiEndpointUrl:
+    Description: URL Base para llamadas a la API
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}
+  CognitoUserPoolId:
+    Description: COGNITO_USER_POOL_ID para el .env
+    Value: !Ref CognitoUserPool
+  CognitoUserPoolClientId:
+    Description: COGNITO_CLIENT_ID para el .env
+    Value: !Ref CognitoUserPoolClient
+  ProjectsTableName:
+    Description: PROJECTS_TABLE para el .env
+    Value: !Ref ProjectsTable
+  DonationsTableName:
+    Description: DONATIONS_TABLE para el .env
+    Value: !Ref DonationsTable
+  IdempotencyTableName:
+    Description: IDEMPOTENCY_TABLE para el .env
+    Value: !Ref IdempotencyTable
+  AuditEventsTableName:
+    Description: AUDIT_TABLE para el .env
+    Value: !Ref AuditEventsTable

@@ -1,0 +1,54 @@
+namespace SecureDonations {
+  entity User in [UserGroup] {
+    sub: String,
+    email: String,
+    isMfaVerified: Boolean
+  };
+
+  entity UserGroup;
+
+  entity Project {
+    projectId: String,
+    status: String,
+    createdBy: String
+  };
+
+  entity Donation {
+    donationId: String,
+    donorSub: String,
+    projectId: String,
+    status: String
+  };
+
+  entity AuditLog;
+
+  action "CreateProject" appliesTo {
+    principal: User,
+    resource: Project
+  };
+
+  action "PublishProject" appliesTo {
+    principal: User,
+    resource: Project
+  };
+
+  action "CreateDonation" appliesTo {
+    principal: User,
+    resource: Project
+  };
+
+  action "SimulateDonation" appliesTo {
+    principal: User,
+    resource: Donation
+  };
+
+  action "ReadMyDonations" appliesTo {
+    principal: User,
+    resource: Donation
+  };
+
+  action "ReadAuditLogs" appliesTo {
+    principal: User,
+    resource: AuditLog
+  };
+}
