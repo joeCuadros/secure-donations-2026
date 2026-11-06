@@ -2,15 +2,14 @@
   "name": "secure-donations-backend",
   "version": "1.0.0",
   "type": "module",
-  "description": "Backend Serverless para Plataforma de Donaciones Seguras 2026", 
+  "description": "Backend Serverless para Plataforma de Donaciones Seguras 2026",
   "main": "index.js",
   "scripts": {
-    "build": "esbuild src/**/*.ts --outdir=dist --bundle --platform=node --target=node24 --format=esm --sourcemap",
     "typecheck": "tsc --noEmit",
+    "build": "esbuild src/**/*.ts --outdir=dist --bundle --platform=node --target=node24 --format=esm --sourcemap",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "lint": "tsc --noEmit"
+    "test:coverage": "vitest run --coverage"
   },
   "keywords": [
     "aws",
@@ -32,6 +31,7 @@
   "devDependencies": {
     "@types/aws-lambda": "^8.10.164",
     "@types/node": "^26.6.6",
+    "@vitest/coverage-v8": "^5.1.0",
     "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
