@@ -102,6 +102,7 @@ Resources:
 
   CognitoUserPoolClient:
     Type: AWS::Cognito::UserPoolClient
+    DependsOn: CognitoResourceServer
     Properties:
       ClientName: !Sub secure-donations-client-${StageName}
       UserPoolId: !Ref CognitoUserPool
