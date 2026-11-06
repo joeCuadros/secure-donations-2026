@@ -1,8 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  Plataforma de Donaciones Seguras 2026 - Infraestructura Serverless AWS SAM
-  Optimizada para la Capa Gratuita de AWS (Stage Academic/Prod).
+  Plataforma de Donaciones Seguras 2026 - Infraestructura Serverless AWS SAM (Stage Academic/Prod).
 
 Parameters:
   StageName:
@@ -12,12 +11,10 @@ Parameters:
       - academic
       - staging
       - prod
-    Description: Entorno de despliegue de la infraestructura
 
   AllowedCorsOrigin:
     Type: String
     Default: "*"
-    Description: Origen permitido para solicitudes CORS
 
 Globals:
   Function:
@@ -159,7 +156,7 @@ Resources:
             IdentitySource: $request.header.Authorization
 
   # ===================================================================
-  # 3. TABLAS DYNAMODB (CAPA GRATUITA)
+  # 3. TABLAS DYNAMODB
   # ===================================================================
   ProjectsTable:
     Type: AWS::DynamoDB::Table
@@ -254,13 +251,13 @@ Resources:
             ProjectionType: ALL
 
   # ===================================================================
-  # 4. FUNCIONES LAMBDA DE DOMINIO Y RUTAS
+  # 4. FUNCIONES LAMBDA DE DOMINIO Y RUTAS (CodeUri: ../backend)
   # ===================================================================
 
   ListProjectsFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../
+      CodeUri: ../backend
       Handler: dist/projects/api.listProjectsHandler
       Policies:
         - DynamoDBReadPolicy:
@@ -278,7 +275,7 @@ Resources:
   GetProjectFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../
+      CodeUri: ../backend
       Handler: dist/projects/api.getProjectHandler
       Policies:
         - DynamoDBReadPolicy:
@@ -296,7 +293,7 @@ Resources:
   GetProjectStatsFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../
+      CodeUri: ../backend
       Handler: dist/projects/api.getProjectStatsHandler
       Policies:
         - DynamoDBReadPolicy:
@@ -314,7 +311,7 @@ Resources:
   CreateProjectFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../
+      CodeUri: ../backend
       Handler: dist/projects/api.createProjectHandler
       Policies:
         - DynamoDBCrudPolicy:
@@ -335,7 +332,7 @@ Resources:
   PublishProjectFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../
+      CodeUri: ../backend
       Handler: dist/projects/api.publishProjectHandler
       Policies:
         - DynamoDBCrudPolicy:
@@ -356,7 +353,7 @@ Resources:
   CreateDonationFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../
+      CodeUri: ../backend
       Handler: dist/donations/api.createDonationHandler
       Policies:
         - DynamoDBCrudPolicy:
@@ -381,7 +378,7 @@ Resources:
   SimulateDonationFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../
+      CodeUri: ../backend
       Handler: dist/donations/api.simulateDonationHandler
       Policies:
         - DynamoDBCrudPolicy:
@@ -404,7 +401,7 @@ Resources:
   ListMyDonationsFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../
+      CodeUri: ../backend
       Handler: dist/donations/api.listMyDonationsHandler
       Policies:
         - DynamoDBReadPolicy:
@@ -423,7 +420,7 @@ Resources:
   ListAuditLogsFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../
+      CodeUri: ../backend
       Handler: dist/audit/api.listAuditLogsHandler
       Policies:
         - DynamoDBReadPolicy:
@@ -439,11 +436,8 @@ Resources:
               AuthorizationScopes:
                 - api/audit.read
 
-# ===================================================================
-# OUTPUTS: VALORES AUTO-GENERADOS PARA COPIAR A TU ARCHIVO .ENV
-# ===================================================================
 Outputs:
-  ApiEndpointUrl:
+  HttpApiEndpoint:
     Description: URL Base para llamadas a la API
     Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}
   CognitoUserPoolId:
@@ -452,15 +446,3 @@ Outputs:
   CognitoUserPoolClientId:
     Description: COGNITO_CLIENT_ID para el .env
     Value: !Ref CognitoUserPoolClient
-  ProjectsTableName:
-    Description: PROJECTS_TABLE para el .env
-    Value: !Ref ProjectsTable
-  DonationsTableName:
-    Description: DONATIONS_TABLE para el .env
-    Value: !Ref DonationsTable
-  IdempotencyTableName:
-    Description: IDEMPOTENCY_TABLE para el .env
-    Value: !Ref IdempotencyTable
-  AuditEventsTableName:
-    Description: AUDIT_TABLE para el .env
-    Value: !Ref AuditEventsTable
