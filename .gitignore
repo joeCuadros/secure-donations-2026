@@ -1,0 +1,6 @@
+# Carpeta de dependencias
+node_modules/
+
+# Variables de entorno
+.env.*
+!.env.example
