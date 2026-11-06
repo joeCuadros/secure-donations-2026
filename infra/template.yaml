@@ -251,14 +251,14 @@ Resources:
             ProjectionType: ALL
 
   # ===================================================================
-  # 4. FUNCIONES LAMBDA DE DOMINIO Y RUTAS (CodeUri: ../backend)
+  # 4. FUNCIONES LAMBDA (CodeUri directo a dist/)
   # ===================================================================
 
   ListProjectsFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../backend
-      Handler: dist/projects/api.listProjectsHandler
+      CodeUri: ../backend/dist
+      Handler: projects/api.listProjectsHandler
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref ProjectsTable
@@ -275,8 +275,8 @@ Resources:
   GetProjectFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../backend
-      Handler: dist/projects/api.getProjectHandler
+      CodeUri: ../backend/dist
+      Handler: projects/api.getProjectHandler
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref ProjectsTable
@@ -293,8 +293,8 @@ Resources:
   GetProjectStatsFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../backend
-      Handler: dist/projects/api.getProjectStatsHandler
+      CodeUri: ../backend/dist
+      Handler: projects/api.getProjectStatsHandler
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref ProjectsTable
@@ -311,8 +311,8 @@ Resources:
   CreateProjectFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../backend
-      Handler: dist/projects/api.createProjectHandler
+      CodeUri: ../backend/dist
+      Handler: projects/api.createProjectHandler
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref ProjectsTable
@@ -332,8 +332,8 @@ Resources:
   PublishProjectFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../backend
-      Handler: dist/projects/api.publishProjectHandler
+      CodeUri: ../backend/dist
+      Handler: projects/api.publishProjectHandler
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref ProjectsTable
@@ -353,8 +353,8 @@ Resources:
   CreateDonationFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../backend
-      Handler: dist/donations/api.createDonationHandler
+      CodeUri: ../backend/dist
+      Handler: donations/api.createDonationHandler
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref DonationsTable
@@ -378,8 +378,8 @@ Resources:
   SimulateDonationFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../backend
-      Handler: dist/donations/api.simulateDonationHandler
+      CodeUri: ../backend/dist
+      Handler: donations/api.simulateDonationHandler
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref DonationsTable
@@ -401,8 +401,8 @@ Resources:
   ListMyDonationsFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../backend
-      Handler: dist/donations/api.listMyDonationsHandler
+      CodeUri: ../backend/dist
+      Handler: donations/api.listMyDonationsHandler
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref DonationsTable
@@ -420,8 +420,8 @@ Resources:
   ListAuditLogsFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: ../backend
-      Handler: dist/audit/api.listAuditLogsHandler
+      CodeUri: ../backend/dist
+      Handler: audit/api.listAuditLogsHandler
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref AuditEventsTable
