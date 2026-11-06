@@ -1,26 +1,41 @@
+
 import type { APIGatewayProxyEventV2 } from 'aws-lambda';
 import type { AuthenticatedUser } from '../../shared/types/api.types.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import { logger } from '../../shared/logger/logger.js';
 
-export const extractUserContext = (event: APIGatewayProxyEventV2): AuthenticatedUser => {
-  const authorizer = event.requestContext.authorizer;
+interface JwtAuthorizer {
+  jwt?: {
+    claims?: Record<string, unknown>;
+  };
+}
 
-  if (!authorizer || !authorizer.jwt || !authorizer.jwt.claims) {
+export const extractUserContext = (
+  event: APIGatewayProxyEventV2
+): AuthenticatedUser => {
+  const authorizer = (
+    event.requestContext as typeof event.requestContext & {
+      authorizer?: JwtAuthorizer;
+    }
+  ).authorizer;
+
+  const claims = authorizer?.jwt?.claims;
+
+  if (!claims) {
     logger.warn('Intento de acceso sin claims JWT válidos');
     throw AppError.unauthorized('Token no válido o ausente');
   }
 
-  const claims = authorizer.jwt.claims;
-  const sub = claims['sub'] as string;
+  const sub = claims['sub'];
 
-  if (!sub) {
+  if (typeof sub !== 'string' || !sub) {
     throw AppError.unauthorized('El claim sub es obligatorio');
   }
 
   // Parsear grupos
   let groups: string[] = [];
   const rawGroups = claims['cognito:groups'];
+
   if (Array.isArray(rawGroups)) {
     groups = rawGroups.map(String);
   } else if (typeof rawGroups === 'string') {
@@ -30,17 +45,21 @@ export const extractUserContext = (event: APIGatewayProxyEventV2): Authenticated
   // Parsear scopes
   let scopes: string[] = [];
   const rawScope = claims['scope'];
+
   if (typeof rawScope === 'string') {
     scopes = rawScope.split(' ').filter(Boolean);
   } else if (Array.isArray(rawScope)) {
     scopes = rawScope.map(String);
   }
 
+  const email = claims['email'];
+  const username = claims['username'] ?? claims['cognito:username'];
+
   return {
     sub,
-    email: (claims['email'] as string) || undefined,
     groups,
     scopes,
-    username: (claims['username'] as string) || (claims['cognito:username'] as string) || undefined,
+    ...(typeof email === 'string' ? { email } : {}),
+    ...(typeof username === 'string' ? { username } : {}),
   };
 };

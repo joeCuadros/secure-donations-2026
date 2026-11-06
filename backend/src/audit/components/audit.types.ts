@@ -22,9 +22,9 @@ export interface CreateAuditInput {
 }
 
 export interface QueryAuditInput {
-  eventType?: string;
-  from?: string;
-  to?: string;
-  limit?: number;
-  nextToken?: string;
+  eventType?: string | undefined;
+  from?: string | undefined;
+  to?: string | undefined;
+  limit?: number | undefined;
+  nextToken?: string | undefined;
 }
