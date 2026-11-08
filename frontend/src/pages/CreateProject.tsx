@@ -1,65 +1,254 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { projectsApi } from '../services/projects/api';
-import { useToast } from '../utils/ToastContext';
-import { ArrowLeft } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { ArrowLeft, CheckCircle, Loader, Rocket } from "lucide-react";
+import { projectsApi } from "../services/projects/api";
+import type { Project } from "../services/projects/types";
+import { useToast } from "../utils/ToastContext";
 
-export const CreateProject: React.FC = () => {
+interface ProjectFormData {
+  title: string;
+  description: string;
+  purpose: string;
+  targetAmount: string;
+}
+
+const initialFormData: ProjectFormData = {
+  title: "",
+  description: "",
+  purpose: "",
+  targetAmount: "",
+};
+
+const formatMoney = (amountCents: number) =>
+  new Intl.NumberFormat("es-PE", {
+    style: "currency",
+    currency: "PEN",
+  }).format(amountCents / 100);
+
+export const CreateProject = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [formData, setFormData] = useState<ProjectFormData>(initialFormData);
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({ title: '', description: '', targetAmount: '' });
+  const [publishing, setPublishing] = useState(false);
+  const [createdProject, setCreatedProject] = useState<Project | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const updateField = (field: keyof ProjectFormData, value: string) => {
+    setFormData((current) => ({ ...current, [field]: value }));
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const targetAmount = Number(formData.targetAmount);
+    if (!Number.isFinite(targetAmount) || targetAmount <= 0) {
+      toast("Ingresa una meta de recaudación válida.", "error");
+      return;
+    }
+
     setLoading(true);
     try {
-      await projectsApi.create({
-        title: formData.title,
-        description: formData.description,
-        targetAmount: Number(formData.targetAmount)
+      const project = await projectsApi.create({
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        purpose: formData.purpose.trim(),
+        goalAmountCents: Math.round(targetAmount * 100),
       });
-      toast('Proyecto creado exitosamente', 'success');
-      navigate('/');
+
+      setCreatedProject(project);
+      toast("Proyecto creado como borrador.", "success");
     } catch (error) {
-      toast('Error al crear el proyecto', 'error');
+      toast(
+        error instanceof Error ? error.message : "No fue posible crear el proyecto.",
+        "error"
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <Link to="/" className="inline-flex items-center gap-2 text-slate-500 hover:text-slate-800">
-        <ArrowLeft size={20} /> Volver
-      </Link>
-      
-      <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm">
-        <h2 className="text-2xl font-bold text-slate-800 mb-6">Nuevo Proyecto</h2>
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Título</label>
-            <input required type="text" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
-              value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
+  const handlePublish = async () => {
+    if (!createdProject) return;
+
+    setPublishing(true);
+    try {
+      await projectsApi.publish(createdProject.projectId);
+      toast("Proyecto publicado exitosamente.", "success");
+      navigate(`/projects/${createdProject.projectId}`);
+    } catch (error) {
+      toast(
+        error instanceof Error ? error.message : "No fue posible publicar el proyecto.",
+        "error"
+      );
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  if (createdProject) {
+    return (
+      <section className="mx-auto w-full max-w-2xl space-y-6">
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm sm:p-10">
+          <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+            <CheckCircle size={32} aria-hidden="true" />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Descripción</label>
-            <textarea required rows={4} className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-              value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
+          <p className="text-sm font-semibold uppercase tracking-wide text-emerald-700">
+            Proyecto creado
+          </p>
+          <h1 className="mt-2 break-words text-2xl font-bold text-slate-900">
+            {createdProject.title}
+          </h1>
+          <p className="mt-3 text-sm leading-6 text-slate-500">
+            El proyecto quedó guardado como borrador con una meta de{" "}
+            <strong className="text-slate-700">
+              {formatMoney(createdProject.goalAmountCents)}
+            </strong>
+            .
+          </p>
+          <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-left text-sm leading-6 text-amber-800">
+            El backend no expone una consulta de borradores. Publícalo desde esta pantalla para que aparezca en el catálogo antes de salir.
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Meta de Recaudación ($)</label>
-            <input required type="number" min="1" className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-              value={formData.targetAmount} onChange={e => setFormData({...formData, targetAmount: e.target.value})} />
-          </div>
-          <div className="pt-4">
-            <button disabled={loading} type="submit" className="w-full bg-blue-600 text-white font-medium py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors">
-              {loading ? 'Creando...' : 'Crear Proyecto'}
+          <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:justify-center">
+            <button
+              type="button"
+              onClick={handlePublish}
+              disabled={publishing}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {publishing ? (
+                <Loader size={18} className="animate-spin" />
+              ) : (
+                <Rocket size={18} aria-hidden="true" />
+              )}
+              {publishing ? "Publicando..." : "Publicar proyecto"}
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/")}
+              className="rounded-xl border border-slate-200 px-5 py-3 font-semibold text-slate-600 transition hover:bg-slate-50"
+            >
+              Volver al catálogo
             </button>
           </div>
+        </div>
+      </section>
+    );
+  }
+
+  const inputClassName =
+    "w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
+
+  return (
+    <section className="mx-auto w-full max-w-2xl space-y-6">
+      <Link
+        to="/"
+        className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-slate-800"
+      >
+        <ArrowLeft size={19} aria-hidden="true" />
+        Volver a proyectos
+      </Link>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+        <div className="mb-7">
+          <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">
+            Nueva iniciativa
+          </p>
+          <h1 className="mt-1 text-2xl font-bold text-slate-900">Crear proyecto</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            Completa la información y establece la meta de recaudación en soles.
+          </p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label htmlFor="title" className="mb-1.5 block text-sm font-semibold text-slate-700">
+              Título del proyecto
+            </label>
+            <input
+              id="title"
+              name="title"
+              type="text"
+              required
+              minLength={3}
+              maxLength={150}
+              value={formData.title}
+              onChange={(event) => updateField("title", event.target.value)}
+              className={inputClassName}
+              placeholder="Ej. Apoyo escolar comunitario"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="description" className="mb-1.5 block text-sm font-semibold text-slate-700">
+              Descripción
+            </label>
+            <textarea
+              id="description"
+              name="description"
+              required
+              minLength={10}
+              rows={4}
+              value={formData.description}
+              onChange={(event) => updateField("description", event.target.value)}
+              className={`${inputClassName} resize-y`}
+              placeholder="Describe en qué consiste el proyecto..."
+            />
+          </div>
+
+          <div>
+            <label htmlFor="purpose" className="mb-1.5 block text-sm font-semibold text-slate-700">
+              Propósito
+            </label>
+            <textarea
+              id="purpose"
+              name="purpose"
+              required
+              minLength={5}
+              rows={3}
+              value={formData.purpose}
+              onChange={(event) => updateField("purpose", event.target.value)}
+              className={`${inputClassName} resize-y`}
+              placeholder="Indica qué busca conseguir la iniciativa..."
+            />
+          </div>
+
+          <div>
+            <label htmlFor="targetAmount" className="mb-1.5 block text-sm font-semibold text-slate-700">
+              Meta de recaudación (PEN)
+            </label>
+            <div className="relative">
+              <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-sm font-semibold text-slate-400">
+                S/
+              </span>
+              <input
+                id="targetAmount"
+                name="targetAmount"
+                type="number"
+                required
+                min="0.01"
+                step="0.01"
+                inputMode="decimal"
+                value={formData.targetAmount}
+                onChange={(event) => updateField("targetAmount", event.target.value)}
+                className={`${inputClassName} pl-11`}
+                placeholder="1000.00"
+              />
+            </div>
+            <p className="mt-1.5 text-xs text-slate-400">
+              La API recibe el valor convertido a céntimos.
+            </p>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3.5 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {loading && <Loader size={18} className="animate-spin" />}
+            {loading ? "Creando proyecto..." : "Crear proyecto"}
+          </button>
         </form>
       </div>
-    </div>
+    </section>
   );
 };

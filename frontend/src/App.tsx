@@ -1,15 +1,15 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { AuthProvider } from './auth/AuthProvider';
-import { ToastProvider } from './utils/ToastContext';
-import { Layout } from './components/Layout';
-import { ProtectedRoute } from './components/ProtectedRoute';
-
-// Páginas
-import { Projects } from './pages/Projects';
-import { CreateProject } from './pages/CreateProject';
-import { ProjectDetail } from './pages/ProjectDetail';
-import { MyDonations } from './pages/MyDonations';
-import { AuditLogs } from './pages/AuditLogs';
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { AuthProvider } from "./auth/AuthProvider";
+import { Layout } from "./components/Layout";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import { AuditLogs } from "./pages/AuditLogs";
+import { AuthCallback } from "./pages/AuthCallback";
+import { CreateProject } from "./pages/CreateProject";
+import { Login } from "./pages/Login";
+import { MyDonations } from "./pages/MyDonations";
+import { ProjectDetail } from "./pages/ProjectDetail";
+import { Projects } from "./pages/Projects";
+import { ToastProvider } from "./utils/ToastContext";
 
 function App() {
   return (
@@ -17,31 +17,28 @@ function App() {
       <ToastProvider>
         <BrowserRouter>
           <Routes>
-            {/* Todas las rutas base requieren autenticación */}
-            <Route element={<ProtectedRoute />}>
-              <Route element={<Layout />}>
-                {/* Listado de proyectos (Dashboard) */}
-                <Route path="/" element={<Projects />} />
-                
-                {/* Detalle de proyecto */}
-                <Route path="/projects/:id" element={<ProjectDetail />} />
-                
-                {/* Creación de proyecto - PROTEGIDO por Scope */}
-                <Route element={<ProtectedRoute requiredScope="api/projects.write" />}>
-                  <Route path="/projects/create" element={<CreateProject />} />
-                </Route>
+            <Route path="/login" element={<Login />} />
+            <Route path="/callback" element={<AuthCallback />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
 
-                {/* Mis donaciones - PROTEGIDO por Scope */}
-                <Route element={<ProtectedRoute requiredScope="api/donations.read" />}>
-                  <Route path="/donations" element={<MyDonations />} />
-                </Route>
+            <Route element={<Layout />}>
+              <Route index element={<Projects />} />
+              <Route path="projects/:id" element={<ProjectDetail />} />
 
-                {/* Auditoría - PROTEGIDO por Scope */}
-                <Route element={<ProtectedRoute requiredScope="api/audit.read" />}>
-                  <Route path="/audit" element={<AuditLogs />} />
-                </Route>
+              <Route element={<ProtectedRoute requiredScope="api/projects.write" />}>
+                <Route path="projects/create" element={<CreateProject />} />
+              </Route>
+
+              <Route element={<ProtectedRoute requiredScope="api/donations.read" />}>
+                <Route path="donations" element={<MyDonations />} />
+              </Route>
+
+              <Route element={<ProtectedRoute requiredScope="api/audit.read" />}>
+                <Route path="audit" element={<AuditLogs />} />
               </Route>
             </Route>
+
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
       </ToastProvider>

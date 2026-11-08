@@ -1,14 +1,13 @@
-import React, { type ReactNode } from 'react';
-import { useAuth } from 'react-oidc-context';
-import { hasPermission } from '../utils/permissions';
+import type { ReactNode } from "react";
+import { useAuth } from "react-oidc-context";
+import { hasPermission } from "../utils/permissions";
 
 interface CanProps {
-  I: string; // El scope requerido, ej: "api/projects.write"
+  I: string;
   children: ReactNode;
 }
 
-export const Can: React.FC<CanProps> = ({ I, children }) => {
+export const Can = ({ I, children }: CanProps) => {
   const auth = useAuth();
-  if (!hasPermission(auth.user, I)) return null;
-  return <>{children}</>;
+  return hasPermission(auth.user, I) ? <>{children}</> : null;
 };

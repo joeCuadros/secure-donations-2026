@@ -1,19 +1,31 @@
+export type DonationStatus =
+  | "PENDIENTE_SIMULACION"
+  | "CONFIRMADA_SIMULADA"
+  | "RECHAZADA_SIMULADA";
+
 export interface Donation {
   donationId: string;
   projectId: string;
-  donorSub: string;
-  amount: number;
-  status: "PENDING" | "COMPLETED" | "FAILED";
+  amountCents: number;
+  currency: "PEN";
+  status: DonationStatus;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface CreateDonationRequest {
   projectId: string;
-  amount: number;
+  amountCents: number;
 }
 
 export interface SimulateDonationRequest {
-  status: "COMPLETED" | "FAILED";
+  result: "CONFIRMADA_SIMULADA" | "RECHAZADA_SIMULADA";
+}
+
+export interface SimulateDonationResponse {
+  donationId: string;
+  status: DonationStatus;
+  updatedAt: string;
 }
 
 export interface DonationListResponse {

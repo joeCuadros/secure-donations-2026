@@ -1,8 +1,13 @@
 export interface AuditEvent {
   eventType: string;
   timestampEventId: string;
-  payload: Record<string, unknown>;
-  actorSub: string;
+  timestamp: string;
+  eventId: string;
+  requestId: string;
+  actorRef: string;
+  action: string;
+  resourceRef: string;
+  outcome: "SUCCESS" | "FAILURE";
 }
 
 export interface AuditListResponse {
@@ -11,6 +16,9 @@ export interface AuditListResponse {
 }
 
 export type ListAuditParams = {
+  eventType?: string;
+  from?: string;
+  to?: string;
   nextToken?: string;
   limit?: number;
 };

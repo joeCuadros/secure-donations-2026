@@ -1,175 +1,246 @@
-import React, { useEffect, useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
-import { projectsApi } from '../services/projects/api';
-import { donationsApi } from '../services/donations/api';
-import type { Project, ProjectStatsResponse } from '../services/projects/types';
-import { useToast } from '../utils/ToastContext';
-import { Can } from '../components/Can';
-import { ArrowLeft, TrendingUp, Users, DollarSign, Loader, CheckCircle } from 'lucide-react';
+import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, Loader, TrendingUp, Wallet } from "lucide-react";
+import { Can } from "../components/Can";
+import { donationsApi } from "../services/donations/api";
+import { projectsApi } from "../services/projects/api";
+import type { Project, ProjectStatsResponse } from "../services/projects/types";
+import { useToast } from "../utils/ToastContext";
 
-export const ProjectDetail: React.FC = () => {
+const formatMoney = (amountCents: number) =>
+  new Intl.NumberFormat("es-PE", {
+    style: "currency",
+    currency: "PEN",
+  }).format(amountCents / 100);
+
+const getErrorMessage = (error: unknown, fallback: string) =>
+  error instanceof Error ? error.message : fallback;
+
+export const ProjectDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
-  
+
   const [project, setProject] = useState<Project | null>(null);
   const [stats, setStats] = useState<ProjectStatsResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [publishing, setPublishing] = useState(false);
-  
-  const [donationAmount, setDonationAmount] = useState('');
+  const [donationAmount, setDonationAmount] = useState("");
   const [donating, setDonating] = useState(false);
 
-  const fetchData = async () => {
-    if (!id) return;
+  const fetchData = useCallback(async () => {
+    if (!id) {
+      navigate("/");
+      return;
+    }
+
+    setLoading(true);
     try {
-      setLoading(true);
-      const [projRes, statsRes] = await Promise.all([
+      const [projectResponse, statsResponse] = await Promise.all([
         projectsApi.get(id),
-        projectsApi.getStats(id)
+        projectsApi.getStats(id),
       ]);
-      setProject(projRes);
-      setStats(statsRes);
+      setProject(projectResponse);
+      setStats(statsResponse);
     } catch (error) {
-      toast('Error al cargar los detalles del proyecto', 'error');
-      navigate('/');
+      toast(getErrorMessage(error, "No fue posible cargar el proyecto."), "error");
+      navigate("/");
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, navigate, toast]);
 
   useEffect(() => {
-    fetchData();
-  }, [id]);
+    void fetchData();
+  }, [fetchData]);
 
-  const handlePublish = async () => {
-    if (!id) return;
-    setPublishing(true);
-    try {
-      await projectsApi.publish(id);
-      toast('Proyecto publicado exitosamente', 'success');
-      fetchData();
-    } catch (error: any) {
-      toast(error.message || 'Error al publicar', 'error');
-    } finally {
-      setPublishing(false);
+  const handleDonate = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const amount = Number(donationAmount);
+
+    if (!id || !Number.isFinite(amount) || amount <= 0) {
+      toast("Ingresa un monto de donación válido.", "error");
+      return;
     }
-  };
 
-  const handleDonate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!id || !donationAmount) return;
     setDonating(true);
     try {
-      const idempotencyKey = crypto.randomUUID();
-      await donationsApi.create({ projectId: id, amount: Number(donationAmount) }, idempotencyKey);
-      toast('Donación registrada (Pendiente de simulación)', 'success');
-      setDonationAmount('');
-      fetchData(); // Recargar para actualizar montos
-    } catch (error: any) {
-      toast(error.message || 'Error al donar', 'error');
+      await donationsApi.create(
+        {
+          projectId: id,
+          amountCents: Math.round(amount * 100),
+        },
+        crypto.randomUUID()
+      );
+      toast("Intención de donación registrada. Está pendiente de simulación.", "success");
+      setDonationAmount("");
+    } catch (error) {
+      toast(getErrorMessage(error, "No fue posible registrar la donación."), "error");
     } finally {
       setDonating(false);
     }
   };
 
-  if (loading) return <div className="flex justify-center p-12"><Loader className="animate-spin text-blue-600" size={40} /></div>;
-  if (!project) return null;
+  if (loading) {
+    return (
+      <div className="flex justify-center py-16" role="status" aria-live="polite">
+        <Loader className="animate-spin text-blue-600" size={38} />
+      </div>
+    );
+  }
 
-  const progressPercentage = Math.min((project.currentAmount / project.targetAmount) * 100, 100);
+  if (!project || !stats) return null;
+
+  const progress = Math.min(Math.max(stats.progress, 0), 100);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <Link to="/" className="inline-flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors">
-        <ArrowLeft size={20} /> Volver a Proyectos
+    <section className="mx-auto w-full max-w-4xl space-y-6">
+      <Link
+        to="/"
+        className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-slate-800"
+      >
+        <ArrowLeft size={19} aria-hidden="true" />
+        Volver a proyectos
       </Link>
 
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-8 md:p-10 border-b border-slate-100">
-          <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4 mb-6">
-            <div>
-              <h1 className="text-3xl font-bold text-slate-900 mb-2">{project.title}</h1>
-              <span className={`inline-block px-3 py-1 rounded-full text-sm font-semibold ${project.status === 'PUBLISHED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                Estado: {project.status}
-              </span>
-            </div>
-            
-            <Can I="api/projects.write">
-              {project.status === 'DRAFT' && (
-                <button onClick={handlePublish} disabled={publishing} className="flex items-center justify-center gap-2 bg-emerald-600 text-white px-6 py-2.5 rounded-xl hover:bg-emerald-700 transition-colors disabled:opacity-50 font-medium">
-                  {publishing ? <Loader className="animate-spin" size={20} /> : <CheckCircle size={20} />}
-                  Publicar Proyecto
-                </button>
-              )}
-            </Can>
+      <article className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-100 p-5 sm:p-8 md:p-10">
+          <div className="mb-5 flex flex-wrap items-center gap-3">
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+              Proyecto publicado
+            </span>
+            <span className="text-xs text-slate-400">Código: {project.projectId}</span>
           </div>
-
-          <p className="text-slate-600 text-lg leading-relaxed">{project.description}</p>
+          <h1 className="break-words text-2xl font-bold text-slate-900 sm:text-3xl">
+            {project.title}
+          </h1>
+          <p className="mt-4 whitespace-pre-line text-sm leading-7 text-slate-600 sm:text-base">
+            {project.description}
+          </p>
+          <div className="mt-5 rounded-xl bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Propósito
+            </p>
+            <p className="mt-1 text-sm leading-6 text-slate-700">{project.purpose}</p>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-slate-100 bg-slate-50">
-          <div className="p-8 md:p-10">
-            <h3 className="text-lg font-semibold text-slate-800 mb-6">Progreso de Recaudación</h3>
-            <div className="space-y-3 mb-6">
-              <div className="flex justify-between items-end">
-                <span className="text-3xl font-bold text-blue-600">${project.currentAmount}</span>
-                <span className="text-slate-500 font-medium pb-1">meta de ${project.targetAmount}</span>
-              </div>
-              <div className="w-full bg-slate-200 rounded-full h-3">
-                <div className="bg-blue-600 h-3 rounded-full transition-all duration-1000" style={{ width: `${progressPercentage}%` }}></div>
-              </div>
+        <div className="grid grid-cols-1 gap-0 divide-y divide-slate-100 md:grid-cols-2 md:divide-x md:divide-y-0">
+          <div className="bg-slate-50 p-5 sm:p-8">
+            <div className="mb-6 flex items-center gap-2">
+              <TrendingUp className="text-blue-600" size={21} aria-hidden="true" />
+              <h2 className="text-lg font-semibold text-slate-800">
+                Progreso de recaudación
+              </h2>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 flex items-center gap-3">
-                <div className="bg-blue-100 p-2 rounded-lg text-blue-600"><Users size={20} /></div>
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-end justify-between gap-2">
                 <div>
-                  <p className="text-sm text-slate-500 font-medium">Donantes</p>
-                  <p className="text-xl font-bold text-slate-800">{stats?.donorsCount || 0}</p>
+                  <p className="text-xs text-slate-500">Monto confirmado</p>
+                  <p className="text-2xl font-bold text-blue-700 sm:text-3xl">
+                    {formatMoney(stats.confirmedAmountCents)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-slate-500">Meta</p>
+                  <p className="font-semibold text-slate-700">
+                    {formatMoney(stats.goalAmountCents)}
+                  </p>
                 </div>
               </div>
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 flex items-center gap-3">
-                <div className="bg-emerald-100 p-2 rounded-lg text-emerald-600"><TrendingUp size={20} /></div>
-                <div>
-                  <p className="text-sm text-slate-500 font-medium">Aportes</p>
-                  <p className="text-xl font-bold text-slate-800">{stats?.totalDonations || 0}</p>
-                </div>
+
+              <div
+                className="h-3 overflow-hidden rounded-full bg-slate-200"
+                role="progressbar"
+                aria-label="Avance de recaudación"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(progress)}
+              >
+                <div
+                  className="h-full rounded-full bg-blue-600 transition-all duration-500"
+                  style={{ width: `${progress}%` }}
+                />
               </div>
+              <p className="text-right text-sm font-semibold text-slate-600">
+                {Math.round(progress)} % de la meta
+              </p>
             </div>
           </div>
 
-          <div className="p-8 md:p-10 flex flex-col justify-center">
-            {project.status === 'PUBLISHED' ? (
-              <Can I="api/donations.write">
-                <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                  <h3 className="text-xl font-bold text-slate-800 mb-4">Haz una donación</h3>
-                  <form onSubmit={handleDonate} className="space-y-4">
+          <div className="flex flex-col justify-center p-5 sm:p-8">
+            <Can I="api/donations.write">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+                <div className="mb-5">
+                  <p className="text-sm font-semibold uppercase tracking-wide text-blue-600">
+                    Colabora
+                  </p>
+                  <h2 className="mt-1 text-xl font-bold text-slate-900">
+                    Realizar una donación
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-500">
+                    Registra el monto que deseas aportar en soles.
+                  </p>
+                </div>
+
+                <form onSubmit={handleDonate} className="space-y-4">
+                  <div>
+                    <label
+                      htmlFor="donationAmount"
+                      className="mb-1.5 block text-sm font-semibold text-slate-700"
+                    >
+                      Monto (PEN)
+                    </label>
                     <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                        <DollarSign className="text-slate-400" size={20} />
-                      </div>
-                      <input 
-                        type="number" min="1" required 
-                        placeholder="Monto a donar"
-                        className="w-full pl-11 pr-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-lg transition-all"
-                        value={donationAmount} 
-                        onChange={e => setDonationAmount(e.target.value)} 
+                      <Wallet
+                        className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                        size={19}
+                        aria-hidden="true"
+                      />
+                      <input
+                        id="donationAmount"
+                        name="donationAmount"
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        inputMode="decimal"
+                        required
+                        value={donationAmount}
+                        onChange={(event) => setDonationAmount(event.target.value)}
+                        placeholder="50.00"
+                        className="w-full rounded-xl border border-slate-300 py-3 pl-11 pr-4 text-base outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                       />
                     </div>
-                    <button disabled={donating} type="submit" className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 disabled:opacity-50 transition-colors flex justify-center items-center gap-2">
-                      {donating ? <Loader className="animate-spin" size={20} /> : 'Donar Ahora'}
-                    </button>
-                  </form>
-                </div>
-              </Can>
-            ) : (
-              <div className="text-center p-6 bg-slate-100 rounded-2xl text-slate-500">
-                Las donaciones estarán habilitadas cuando el proyecto sea publicado.
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={donating}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {donating && <Loader size={18} className="animate-spin" />}
+                    {donating ? "Registrando..." : "Registrar donación"}
+                  </button>
+                </form>
+                <p className="mt-4 text-xs leading-5 text-slate-400">
+                  La donación se registra como pendiente de simulación. El monto confirmado del proyecto se actualiza cuando se confirma la simulación.
+                </p>
               </div>
-            )}
+            </Can>
+
+            <Can I="api/donations.read">
+              <div className="mt-4 text-center">
+                <Link
+                  to="/donations"
+                  className="text-sm font-semibold text-blue-700 hover:text-blue-800"
+                >
+                  Consultar mis donaciones
+                </Link>
+              </div>
+            </Can>
           </div>
         </div>
-      </div>
-    </div>
+      </article>
+    </section>
   );
 };

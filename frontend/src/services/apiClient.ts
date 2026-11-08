@@ -1,49 +1,85 @@
 import { userManager } from "../auth/AuthProvider";
 
-const BASE_URL = import.meta.env.VITE_API_URL;
+const BASE_URL = import.meta.env.VITE_API_URL?.trim().replace(/\/+$/, "");
 
 interface ApiClientOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined | null>;
 }
 
-export const apiClient = async <T>(endpoint: string, options: ApiClientOptions = {}): Promise<T> => {
-  const { params, ...fetchOptions } = options;
-  const user = await userManager.getUser();
-  const token = user?.access_token;
+const getAccessToken = async (): Promise<string | undefined> => {
+  let user = await userManager.getUser();
 
-  const headers = new Headers(fetchOptions.headers);
-  
-  if (!headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
-
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
-
-  let url = `${BASE_URL}${endpoint}`;
-  if (params) {
-    const searchParams = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== "") {
-        searchParams.append(key, String(value));
-      }
-    });
-    const queryString = searchParams.toString();
-    if (queryString) {
-      url += `?${queryString}`;
+  if (user?.expired) {
+    try {
+      user = await userManager.signinSilent();
+    } catch {
+      return undefined;
     }
   }
+
+  return user && !user.expired ? user.access_token : undefined;
+};
+
+const getErrorMessage = (body: unknown, status: number): string => {
+  if (
+    body &&
+    typeof body === "object" &&
+    "message" in body &&
+    typeof body.message === "string"
+  ) {
+    return body.message;
+  }
+
+  if (typeof body === "string" && body.trim()) return body;
+  return `Error HTTP ${status}`;
+};
+
+export const apiClient = async <T>(
+  endpoint: string,
+  options: ApiClientOptions = {}
+): Promise<T> => {
+  if (!BASE_URL) {
+    throw new Error("Falta configurar VITE_API_URL en el archivo .env.");
+  }
+
+  const { params, ...fetchOptions } = options;
+  const headers = new Headers(fetchOptions.headers);
+  const token = await getAccessToken();
+
+  headers.set("Accept", "application/json");
+  if (fetchOptions.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const url = new URL(`${BASE_URL}${endpoint}`);
+  Object.entries(params ?? {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      url.searchParams.set(key, String(value));
+    }
+  });
 
   const response = await fetch(url, {
     ...fetchOptions,
     headers,
   });
 
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    throw new Error(errorBody.message || `HTTP Error: ${response.status}`);
+  if (response.status === 204) return undefined as T;
+
+  const responseText = await response.text();
+  let responseBody: unknown = null;
+
+  if (responseText) {
+    try {
+      responseBody = JSON.parse(responseText);
+    } catch {
+      responseBody = responseText;
+    }
   }
 
-  return response.json() as Promise<T>;
+  if (!response.ok) {
+    throw new Error(getErrorMessage(responseBody, response.status));
+  }
+
+  return responseBody as T;
 };
