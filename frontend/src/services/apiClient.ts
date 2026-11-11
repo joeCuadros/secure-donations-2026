@@ -44,7 +44,7 @@ export const apiClient = async <T>(
 
   const { params, ...fetchOptions } = options;
   const headers = new Headers(fetchOptions.headers);
-  const token = await getAccessToken();
+  let token = await getAccessToken();
 
   headers.set("Accept", "application/json");
   if (fetchOptions.body && !headers.has("Content-Type")) {
@@ -59,10 +59,22 @@ export const apiClient = async <T>(
     }
   });
 
-  const response = await fetch(url, {
-    ...fetchOptions,
-    headers,
-  });
+  let response = await fetch(url, { ...fetchOptions, headers });
+
+  // Si detecta 403 Forbidden, el permiso del grupo podría estar obsoleto en el JWT actual
+  // Intenta una renovación forzada y reintenta la solicitud una vez.
+  if (response.status === 403) {
+    try {
+      const freshUser = await userManager.signinSilent();
+      if (freshUser?.access_token) {
+        token = freshUser.access_token;
+        headers.set("Authorization", `Bearer ${token}`);
+        response = await fetch(url, { ...fetchOptions, headers });
+      }
+    } catch (err) {
+      // Retiene el error de red o de renovación silenciosa y procede a lanzar la excepción base
+    }
+  }
 
   if (response.status === 204) return undefined as T;
 

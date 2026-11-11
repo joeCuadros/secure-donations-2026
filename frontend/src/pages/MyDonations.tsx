@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Loader, ReceiptText } from "lucide-react";
+import { Loader, ReceiptText, Play } from "lucide-react";
 import { donationsApi } from "../services/donations/api";
 import type { Donation, DonationStatus } from "../services/donations/types";
 import { useToast } from "../utils/ToastContext";
@@ -41,6 +41,7 @@ export const MyDonations = () => {
   const [nextToken, setNextToken] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const { toast } = useToast();
+  const [simulatingId, setSimulatingId] = useState<string | null>(null);
 
   const fetchDonations = useCallback(async (token?: string) => {
     const isInitial = !token;
@@ -72,6 +73,24 @@ export const MyDonations = () => {
     void fetchDonations();
   }, [fetchDonations]);
 
+  const handleSimulate = async (donationId: string) => {
+    setSimulatingId(donationId);
+    try {
+      const response = await donationsApi.simulate(donationId, { result: "CONFIRMADA_SIMULADA" });
+      setDonations(current => current.map(d => 
+        d.donationId === donationId ? { ...d, status: response.status } : d
+      ));
+      toast("Donación confirmada exitosamente en el entorno de simulación.", "success");
+    } catch (error) {
+      toast(
+        error instanceof Error ? error.message : "Error al simular la confirmación.",
+        "error"
+      );
+    } finally {
+      setSimulatingId(null);
+    }
+  };
+
   return (
     <section className="space-y-6">
       <div>
@@ -84,6 +103,10 @@ export const MyDonations = () => {
         <p className="mt-2 text-sm text-slate-500">
           Consulta los aportes que has registrado y su estado actual.
         </p>
+      </div>
+
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
+        <strong>Simulación académica:</strong> no se ha realizado ningún cobro. Utiliza el botón de simulación para confirmar tu intención de donación en el sistema.
       </div>
 
       {loading ? (
@@ -129,6 +152,20 @@ export const MyDonations = () => {
                     </p>
                   </div>
                 </div>
+                
+                {donation.status === 'PENDIENTE_SIMULACION' && (
+                   <div className="mt-4 border-t border-slate-100 pt-3">
+                     <button
+                        onClick={() => handleSimulate(donation.donationId)}
+                        disabled={simulatingId === donation.donationId}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+                     >
+                       {simulatingId === donation.donationId ? <Loader size={14} className="animate-spin" /> : <Play size={14} />}
+                       Simular confirmación
+                     </button>
+                   </div>
+                )}
+                
                 <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
                   {formatDate(donation.createdAt)}
                 </p>
@@ -145,7 +182,7 @@ export const MyDonations = () => {
                     <th className="px-5 py-4">ID de proyecto</th>
                     <th className="px-5 py-4">Monto</th>
                     <th className="px-5 py-4">Estado</th>
-                    <th className="px-5 py-4">Fecha</th>
+                    <th className="px-5 py-4">Acción</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -163,8 +200,19 @@ export const MyDonations = () => {
                       <td className="px-5 py-4">
                         <StatusBadge status={donation.status} />
                       </td>
-                      <td className="px-5 py-4 text-sm text-slate-500">
-                        {formatDate(donation.createdAt)}
+                      <td className="px-5 py-4">
+                        {donation.status === 'PENDIENTE_SIMULACION' ? (
+                          <button
+                            onClick={() => handleSimulate(donation.donationId)}
+                            disabled={simulatingId === donation.donationId}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+                          >
+                             {simulatingId === donation.donationId ? <Loader size={14} className="animate-spin" /> : <Play size={14} />}
+                             Simular
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-400">Completada</span>
+                        )}
                       </td>
                     </tr>
                   ))}

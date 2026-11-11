@@ -3,6 +3,8 @@ import type { User } from "oidc-client-ts";
 type TokenClaims = Record<string, unknown> & {
   scope?: string | string[];
   "cognito:groups"?: string[] | string;
+  amr?: string[] | string;
+  "cognito:amr"?: string[] | string;
 };
 
 const scopeGroups: Record<string, string> = {
@@ -48,6 +50,12 @@ export const hasPermission = (
     ...toStringArray(profile["cognito:groups"]),
   ];
   const requiredGroup = scopeGroups[requiredScope];
+
+  if (requiredScope === "api/audit.read") {
+    const amr = [...toStringArray(claims.amr), ...toStringArray(claims["cognito:amr"])];
+    const isMfaVerified = amr.some(val => val.toLowerCase().includes("mfa"));
+    if (!isMfaVerified) return false;
+  }
 
   return (
     scopes.includes(requiredScope) &&

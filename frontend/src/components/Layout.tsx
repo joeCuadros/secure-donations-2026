@@ -32,9 +32,9 @@ export const Layout = () => {
     if (auth.activeNavigator) return;
 
     try {
+      await auth.removeUser();
       await auth.signoutRedirect();
     } catch {
-      await auth.removeUser();
       window.location.replace("/login");
     }
   };
