@@ -151,7 +151,7 @@ paths:
         - $ref: '#/components/parameters/ProjectId'
       responses:
         '200':
-          description: Detalle del proyecto.
+          description: Detalle del proyecto publicado. No incluye `createdBy`.
           content:
             application/json:
               schema:
@@ -417,7 +417,9 @@ components:
       description: |
         Access token de Amazon Cognito (Authorization Code + PKCE) enviado como `Authorization: Bearer <access_token>`.
         Scopes del resource server `api`: `api/projects.write`, `api/donations.write`, `api/donations.read`
-        y `api/audit.read`. Un ID token no es una credencial válida para la API. El valor `us-east-2_EXAMPLE`
+        y `api/audit.read`. Un ID token no es una credencial válida para la API: API Gateway lo rechaza con 403 (no 401) al comprobar el scope de
+        la ruta, que el ID token no contiene. Todos los access tokens del único app client llevan todos estos scopes,
+        de modo que el rol lo decide Verified Permissions a partir del grupo. El valor `us-east-2_EXAMPLE`
         de la URL es un marcador: el identificador real del user pool se obtiene de la salida
         `CognitoUserPoolId` de la pila.
 
@@ -469,7 +471,7 @@ components:
     Forbidden:
       description: |
         Privilegio insuficiente. Puede originarse en API Gateway (token válido sin el scope exigido por la
-        ruta; cuerpo `GatewayMessage`) o en Lambda (scope reverificado, grupo no permitido, donación ajena
+        ruta, caso de un ID token; cuerpo `GatewayMessage`) o en Lambda (scope reverificado, grupo no permitido, donación ajena
         o stage distinto de `academic`; cuerpo `ErrorPayload`).
       content:
         application/json:
@@ -562,7 +564,6 @@ components:
         - confirmedAmountCents
         - currency
         - status
-        - createdBy
         - createdAt
         - updatedAt
       properties:
@@ -590,7 +591,10 @@ components:
           enum: [BORRADOR, PUBLICADO]
         createdBy:
           type: string
-          description: '`sub` del gestor que creó el proyecto (la respuesta actual lo incluye).'
+          description: |
+            `sub` del gestor que creó el proyecto. Solo lo devuelve la respuesta de creación (201, al propio gestor);
+            el detalle público (`GET /v1/projects/{projectId}`), el catálogo y la lista de borradores no lo incluyen
+            (CA-02.1, CA-09.2).
         createdAt:
           type: string
           format: date-time

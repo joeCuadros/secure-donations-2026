@@ -21,7 +21,7 @@ Documentos de referencia: [requirements.md](requirements.md) (requerimientos y p
 flowchart TD
   U["Visitante / Donante / Gestor / Auditor<br/>(navegador, no confiable)"] -->|HTTPS| CF["CloudFront<br/>response headers policy: CSP, HSTS, nosniff"]
   CF -->|"OAC (SigV4)"| S3[("S3 privado<br/>SPA React")]
-  U -->|"Authorization Code + PKCE"| IDP["Cognito User Pool<br/>grupos DONANTE / GESTOR / AUDITOR<br/>TOTP por usuario (Policy Administrator)"]
+  U -->|"Authorization Code + PKCE"| IDP["Cognito User Pool<br/>grupos DONANTE / GESTOR / AUDITOR<br/>TOTP obligatorio (Policy Administrator)"]
   U -->|"Bearer access token"| APIG["API Gateway HTTP API<br/>JWT authorizer + scopes por ruta<br/>(PEP 1)"]
   APIG --> FN["10 funciones Lambda Node.js 24<br/>un rol IAM por función<br/>(PEP 2: claims verificados + decisión del PE)"]
   FN -->|IsAuthorized| AVP["Verified Permissions<br/>políticas Cedar (Policy Engine)"]
@@ -57,8 +57,16 @@ La ruta `POST /v1/donations/{donationId}/simulate` y su función solo existen en
 - **La autorización usa Verified Permissions en todas las rutas protegidas.** El diseño plantea RBAC embebido para
   el MVP y Verified Permissions como extensión (HU-12); la implementación evalúa directamente con Cedar (no hay
   RBAC embebido paralelo). El módulo `authz` solo extrae claims verificados y comprueba scopes.
+- **MFA TOTP obligatorio para todos los usuarios**, más estricto que la matriz de `requirements.md` (ver «Usuarios de
+  prueba y MFA»).
+- **Un ID token usado como Bearer recibe 403, no 401** (CA-03.2): el JWT authorizer acepta su firma y emisor, y lo rechaza
+  al comprobar el scope de la ruta, que el ID token no contiene. El comportamiento es propio de API Gateway y no es
+  configurable (prueba T11).
+- **Todos los access tokens llevan todos los scopes** del único app client, también `api/projects.write` en los
+  donantes. El control de rol lo ejerce Verified Permissions a partir del grupo, no el scope (prueba T03).
 - **CI en un único `ci.yml`** (backend y frontend como trabajos separados), tal como propone design.md §8.
-- **AWS Budgets es opcional**: se crea solo si se indica `BudgetAlertEmail` al desplegar.
+- **AWS Budgets es opcional**: se crea solo si se indica `BudgetAlertEmail` al desplegar. El despliegue documentado no
+  indicó ningún correo, de modo que no hay alerta de presupuesto.
 
 ## Requisitos previos
 
@@ -172,7 +180,9 @@ registrar una aplicación autenticadora y verifica el primer código; sin segund
 Esto es más estricto que la matriz de `requirements.md`, que exige MFA solo a GESTOR y AUDITOR y lo deja opcional
 para DONANTE. Se eligió así porque, con MFA opcional, el login administrado no ofrece registrar TOTP y un usuario
 privilegiado podría entrar solo con contraseña. La desviación debe constar en el informe. La evidencia de CA-11.2 es
-la prueba T14. El modo `--enforce-mfa` del script ya no es necesario.
+la prueba T14, que sigue **pendiente**: la configuración del pool está verificada (`MfaConfiguration: ON`, solo TOTP),
+pero falta la captura manual del desafío TOTP de un GESTOR. El modo `--enforce-mfa` de `scripts/create-test-users.sh`
+ya no es necesario con el pool en `ON` (su texto de ayuda aún describe un MFA opcional).
 
 ## Pruebas
 
@@ -201,9 +211,22 @@ export API_URL="$(aws cloudformation describe-stacks --region us-east-2 --stack-
 bash scripts/acceptance.sh
 ```
 
-T10, T13 y T14 no se pueden automatizar solo con `curl`: el script imprime el procedimiento manual. Los resultados
-verificados y los pendientes están en [evidence/2026-11-11-smoke.md](evidence/2026-11-11-smoke.md); una prueba pendiente
-no debe presentarse como superada.
+T10, T13 y T14 no se pueden automatizar solo con `curl`: el script imprime el procedimiento manual.
+
+**Estado de las pruebas (2026-11-11).** El script se ejecutó tres veces contra el despliegue con usuarios reales (dos
+DONANTE y un GESTOR, con MFA TOTP); la tercera ejecución dio 12 PASS, 0 FAIL y 3 omitidas e incluye T03b.
+
+| Prueba | Estado |
+|---|---|
+| T01–T09, T11, T12, T03b | PASS contra el despliegue con usuarios reales. T11 pasa con una desviación: el ID token recibe 403 |
+| T10 | Solo evidencia estática (política del rol de `ListProjectsFunction`). El IAM Policy Simulator no es utilizable en esta cuenta: la SCP de la organización hace que devuelva `explicitDeny` para cualquier acción |
+| T13 | PASS, ejecución manual con la línea de tiempo en UTC |
+| T14 | **Pendiente**: configuración del pool verificada, captura manual no realizada |
+
+Ninguna ejecución usó un usuario AUDITOR, de modo que la consulta de auditoría (HU-10) no se ejercitó con un usuario real.
+El detalle está en [evidence/2026-11-11-acceptance.md](evidence/2026-11-11-acceptance.md); la verificación inicial sin
+credenciales, cuyos estados «pendiente» quedaron superados, está en
+[evidence/2026-11-11-smoke.md](evidence/2026-11-11-smoke.md). Una prueba pendiente no debe presentarse como superada.
 
 ## Limpieza (CA-NF09.2)
 
@@ -245,6 +268,8 @@ no debe presentarse como superada.
 ├── policies/                  # Políticas Cedar y esquema (reflejadas en template.yaml)
 ├── docs/
 │   ├── api.yaml               # OpenAPI 3.1
+│   ├── informe-tecnico.md     # informe técnico
+│   ├── informe/               # texto actualizado del informe de laboratorio y sus figuras
 │   └── threat-model.md        # STRIDE por frontera + mapeo NIST SP 800-207
 ├── evidence/                  # Evidencias sanitizadas de las pruebas
 ├── scripts/
@@ -270,7 +295,21 @@ no debe presentarse como superada.
 - `AuditEvents` registra las escrituras exitosas y los rechazos posteriores a la autenticación (`DENIED`, `FAILURE`,
   `ERROR`) de los siete handlers protegidos; no registra consultas exitosas ni las solicitudes que API Gateway rechaza
   antes de invocar a Lambda.
+- La auditoría es de mejor esfuerzo: un fallo al escribir el evento se registra en el log y no cambia la respuesta. La
+  repetición idempotente de una creación de donación (T06) escribe un segundo evento `SUCCESS` para la misma donación.
+- Carrera de idempotencia: dos solicitudes simultáneas con la misma clave y carga pueden recibir 409 la segunda, en lugar
+  de repetir la respuesta (no se probó en el despliegue).
+- La CSP usa un comodín en `connect-src` (`https://*.execute-api.<región>.amazonaws.com`) para no referenciar la API
+  concreta y evitar una dependencia circular con el CORS de la API.
+- La API no tiene una operación de edición de proyectos (solo crear, listar borradores y publicar), aunque la matriz de
+  roles de `requirements.md` menciona «editar».
 - Los permisos de logs de Lambda vienen del rol administrado `AWSLambdaBasicExecutionRole`.
+- No se ha medido el rendimiento (RNF-HU-05) ni evaluado la accesibilidad (RNF-HU-06).
+- Ninguna ejecución de aceptación usó un usuario AUDITOR: `GET /v1/audit` solo se comprobó sin token (401) y las filas
+  de `AuditEvents` se verificaron con una consulta directa al índice.
+- La cuenta de AWS es compartida por el equipo: el aislamiento entre integrantes depende de IAM y de la disciplina del
+  equipo.
+- La limpieza (CA-NF09.2) no se ha ejecutado: el despliegue sigue activo.
 
 El detalle, los controles asociados y las respuestas a las preguntas de discusión están en
 [docs/threat-model.md](docs/threat-model.md).

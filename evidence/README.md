@@ -7,12 +7,18 @@ seguridad. Cada archivo indica la fecha, el entorno y qué se observó realmente
 
 | Archivo | Descripción |
 |---|---|
-| [2026-11-11-smoke.md](2026-11-11-smoke.md) | Verificación sin credenciales contra el despliegue: tabla T01–T14 con trazabilidad y estado, pruebas unitarias relacionadas y observaciones sin procesar |
-| [2026-11-11-acceptance.md](2026-11-11-acceptance.md) | Pruebas de aceptación con usuarios reales: T01–T09, T11, T12 y T13 superadas, T10 con evidencia estática y T14 pendiente. Sustituye los estados «pendiente» de la verificación sin credenciales |
+| [2026-11-11-smoke.md](2026-11-11-smoke.md) | Primera verificación, sin credenciales, contra el despliegue: tabla T01–T14 con trazabilidad y estado, pruebas unitarias relacionadas y observaciones sin procesar. Es un registro fechado: sus estados «pendiente» fueron superados después (ver la nota inicial de ese archivo) |
+| [2026-11-11-acceptance.md](2026-11-11-acceptance.md) | Pruebas de aceptación con usuarios reales (tres corridas de `scripts/acceptance.sh`, la tercera con T03b): T01–T09, T11, T12 y T03b superadas (T11 con la desviación del 403 para el ID token), T13 superada con su línea de tiempo en UTC, T10 con evidencia estática y T14 pendiente. Incluye los rechazos registrados en `AuditEvents` y la gestión de borradores. Es la evidencia vigente: sustituye los estados «pendiente» de la verificación sin credenciales |
 
 Los eventos de auditoría (`AuditEvents`) registran también las operaciones rechazadas tras la autenticación (`DENIED`,
-`FAILURE`, `ERROR`). Ninguna de las evidencias anteriores incluye todavía una consulta de `GET /v1/audit` con esos
-eventos reales: esa comprobación en el despliegue está pendiente.
+`FAILURE`, `ERROR`). Esos eventos se observaron en el despliegue con una consulta directa al índice
+`AllAuditLogsIndex` (extracto en `2026-11-11-acceptance.md`). Ninguna evidencia incluye una consulta de `GET /v1/audit`
+hecha por un usuario AUDITOR a través de la API: ninguna ejecución usó un usuario AUDITOR, y esa comprobación está
+pendiente. Tampoco hay todavía capturas de pantalla.
+
+Pendientes de evidencia: la captura manual de T14, la demostración dinámica de T10 (el IAM Policy Simulator no es
+utilizable en esta cuenta: la SCP de la organización hace que devuelva `explicitDeny` para cualquier acción), las
+capturas de CloudWatch con un caso exitoso y uno rechazado (CA-NF07.2) y las mediciones de rendimiento y accesibilidad.
 
 ## Estados
 
@@ -25,7 +31,8 @@ eventos reales: esa comprobación en el despliegue está pendiente.
 1. Ejecute la prueba (`bash scripts/acceptance.sh` o el procedimiento manual indicado por el script).
 2. Guarde el resultado en un archivo con fecha: `evidence/AAAA-MM-DD-<tema>.md` (o `.txt` para salidas de consola).
 3. Indique siempre fecha y zona horaria, entorno (stage y región), el comando o procedimiento y el resultado observado.
-4. Actualice el estado en la tabla de [2026-11-11-smoke.md](2026-11-11-smoke.md) o cree una tabla nueva con la fecha.
+4. No reescriba los registros fechados anteriores: cree una tabla nueva con la fecha, como
+   [2026-11-11-acceptance.md](2026-11-11-acceptance.md), y enlácela desde esta lista.
 
 ## Reglas de sanitización
 
