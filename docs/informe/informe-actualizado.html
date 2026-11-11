@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Informe actualizado - AQP-SOLIDARIA</title>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; line-height: 1.4; color: #111111; max-width: 900px; margin: 24px auto; padding: 0 16px; }
+  h1 { font-size: 20pt; margin-top: 28pt; }
+  h2 { font-size: 15pt; margin-top: 18pt; }
+  h3 { font-size: 12.5pt; margin-top: 14pt; }
+  table { border-collapse: collapse; width: 100%; margin: 8pt 0 12pt 0; }
+  th, td { border: 1px solid #555555; padding: 4px 6px; vertical-align: top; font-size: 10pt; text-align: left; }
+  th { background-color: #d9e2ec; }
+  pre { font-family: Consolas, 'Courier New', monospace; font-size: 9pt; background-color: #f3f3f3; border: 1px solid #bbbbbb; padding: 8px; white-space: pre-wrap; }
+  code { font-family: Consolas, 'Courier New', monospace; font-size: 10pt; }
+  p.cap { text-align: center; font-style: italic; font-size: 10pt; margin-top: 4pt; }
+  p.fig { text-align: center; margin-bottom: 0; }
+  p.pend { background-color: #fff2a8; border: 1px dashed #8a6d00; padding: 6px 8px; font-weight: bold; }
+  div.nota { border: 3px solid #b45309; background-color: #fff7e6; padding: 10px 14px; margin-bottom: 24pt; }
+</style>
+</head>
+<body>
+
+<div class="nota">
+<h2 style="margin-top:0">NOTA PARA EL EQUIPO (no es parte del informe; borrar este bloque tras pegar)</h2>
+<p>Este archivo reemplaza el contenido desactualizado del informe (redactado cuando solo estaba fusionado el primer pull request). Refleja la rama <code>main</code> en el commit <code>ac24848</code> (cinco pull requests fusionados, #1 a #5). Para usarlo: abrir en el navegador, seleccionar todo, copiar y pegar en Google Docs; cada bloque con encabezado de nivel 1 sustituye al bloque equivalente. Si las imágenes no se pegan, insertarlas desde la carpeta <code>figuras/</code>.</p>
+<p><b>Lo que el equipo debe completar o verificar antes de entregar:</b></p>
+<ol>
+  <li>Sección 8: participantes, revisores y fechas (<code>[COMPLETAR POR EL EQUIPO]</code>), y las tareas y aportes de ChatGPT, GitHub Copilot y Claude, que no constan en el repositorio. Confirmar además qué parte de los PR #3 y #5 fue asistida por IA (<code>AI_USAGE.md</code> describe de forma explícita los PR #1, #2 y #4).</li>
+  <li>Sección 8: quién reportó el caso del borrador inalcanzable y si el código original fue generado por IA; el repositorio solo dice «caso reportado durante el uso de la aplicación».</li>
+  <li>Capturas marcadas como <code>[CAPTURA PENDIENTE: ...]</code>: desafío TOTP de un GESTOR (T14), pantalla «Borradores», vista de auditoría con filas DENIED/FAILURE, aviso de simulación y, además, CloudWatch con un caso exitoso y uno rechazado (CA-NF07.2).</li>
+  <li>T14 permanece pendiente hasta tener la captura; no cambiar su estado sin ella.</li>
+  <li>Decidir qué se hace con <code>frontend/.env.example</code> (archivo sin versionar generado por un agente; <code>AI_USAGE.md</code> lo declara pendiente de decisión humana).</li>
+  <li>Confirmar si ya se ejecutó la limpieza de recursos (CA-NF09.2). Según el repositorio no se ha ejecutado y la pila sigue activa.</li>
+  <li>Este texto no incluye portada, nombres de integrantes ni la primera pestaña de planificación; al final hay una nota sugerida para esta última.</li>
+</ol>
+</div>
+
+<h1>1. Introducción y alcance</h1>
+
+<p>«Fundación AQP-SOLIDARIA» es una fundación peruana ficticia que publica proyectos sociales y recibe intenciones de donación. El laboratorio implementa una plataforma de donaciones simuladas sobre servicios serverless de AWS, con el modelo de seguridad Zero Trust de NIST SP 800-207 como eje, y demuestra los controles mediante pruebas negativas (T01–T14).</p>
+
+<p>El alcance cubre las historias de usuario del MVP (HU-01 a HU-09 y HU-11) y las extensiones HU-10 (auditoría) y HU-12 (autorización externalizada con Amazon Verified Permissions). No se procesa ningún pago real: no se solicitan ni almacenan datos de tarjeta, CVV, cuentas bancarias ni documentos de identidad, y no se realiza ningún cargo. Usuarios y proyectos son de prueba. Quedan fuera de alcance, y se declaran como limitaciones, la verificación de postura del dispositivo, la evaluación continua de riesgo, ZTNA, AWS WAF, el dominio propio y los pagos reales.</p>
+
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>Elemento</th><th>Valor</th></tr>
+  <tr><td>Repositorio</td><td>https://github.com/joeCuadros/secure-donations-2026</td></tr>
+  <tr><td>Frontend (CloudFront)</td><td>https://d1739wxds233q3.cloudfront.net</td></tr>
+  <tr><td>API (API Gateway HTTP API, stage <code>academic</code>)</td><td>https://ueln2jhpja.execute-api.us-east-2.amazonaws.com/academic</td></tr>
+  <tr><td>Despliegue</td><td>Pila <code>secure-donations-backend-academic</code>, stage <code>academic</code>, región <code>us-east-2</code>; verificado el 2026-11-11</td></tr>
+  <tr><td>Estado documentado</td><td>Rama <code>main</code>, commit <code>ac24848</code> (pull requests #1 a #5 fusionados)</td></tr>
+</table>
+
+<h1>2. Requisitos y trazabilidad</h1>
+
+<h2>2.1 Roles y matriz de permisos</h2>
+
+<p>Los roles son grupos de Cognito (<code>DONANTE</code>, <code>GESTOR</code>, <code>AUDITOR</code>); el visitante es anónimo. Los permisos se verifican siempre en el backend. La implementación aplica MFA TOTP a todos los usuarios, algo más estricto que el requisito, que solo lo exige a GESTOR y AUDITOR (ver sección 7).</p>
+
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>Función</th><th>Visitante</th><th>Donante</th><th>Gestor</th><th>Auditor</th></tr>
+  <tr><td>Ver proyectos publicados y totales agregados</td><td>Sí</td><td>Sí</td><td>Sí</td><td>Sí</td></tr>
+  <tr><td>Crear intención de donación simulada</td><td>No</td><td>Sí</td><td>No</td><td>No</td></tr>
+  <tr><td>Simular confirmación de donación propia (solo stage académico)</td><td>No</td><td>Sí</td><td>No</td><td>No</td></tr>
+  <tr><td>Ver historial propio</td><td>No</td><td>Sí</td><td>No</td><td>No</td></tr>
+  <tr><td>Crear, listar borradores y publicar proyectos</td><td>No</td><td>No</td><td>Sí</td><td>No</td></tr>
+  <tr><td>Consultar eventos de auditoría</td><td>No</td><td>No</td><td>No</td><td>Sí</td></tr>
+  <tr><td>MFA TOTP</td><td>No aplica</td><td>Obligatorio en la implementación (el requisito lo deja opcional)</td><td>Obligatorio</td><td>Obligatorio</td></tr>
+</table>
+<p>Nota: la API no tiene una operación de edición de proyectos (solo crear, listar borradores y publicar); la matriz de requirements.md menciona «editar», pero los criterios CA-08.1 a CA-08.3 no la exigen.</p>
+
+<h2>2.2 Estado de las historias de usuario (commit ac24848)</h2>
+
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>HU</th><th>Historia</th><th>Estado</th><th>Observación</th></tr>
+  <tr><td>HU-01</td><td>Listar proyectos</td><td>Cumplida</td><td>Catálogo público desde el índice <code>status-createdAt</code> con <code>status = PUBLICADO</code>; T01 PASS (sin borradores). El estado vacío (CA-01.3) se observó en el despliegue.</td></tr>
+  <tr><td>HU-02</td><td>Consultar detalle</td><td>Cumplida</td><td>El detalle público no devuelve <code>createdBy</code> (corregido en el PR #2). Un identificador inexistente responde 404 (observado); el 404 para un proyecto no publicado está cubierto por una prueba unitaria.</td></tr>
+  <tr><td>HU-03</td><td>Iniciar y cerrar sesión</td><td>Cumplida con desviación</td><td>Authorization Code + PKCE con el login administrado de Cognito; token de 15 minutos; el cierre de sesión revoca los tokens. T02 y T13 PASS. Desviación: un ID token recibe 403 y no 401 (T11).</td></tr>
+  <tr><td>HU-04</td><td>Control de roles</td><td>Cumplida</td><td>T03 (403 al donante que crea un proyecto) y T12 (403 al gestor sobre el historial de donaciones) PASS. Identidad y grupos solo de claims verificados.</td></tr>
+  <tr><td>HU-05</td><td>Registrar intención de donación</td><td>Parcial</td><td>T04 a T07 PASS. La reutilización secuencial de la clave devuelve la misma donación (T06). Dos solicitudes simultáneas e idénticas pueden leer ambas «sin registro» y la segunda transacción falla con 409 en lugar de repetir la respuesta (<code>create-donation.service.ts</code>); este caso no se probó en el despliegue.</td></tr>
+  <tr><td>HU-06</td><td>Simular confirmación</td><td>Cumplida</td><td>T08 PASS: 10 solicitudes paralelas dan un 200 y nueve 409, con un solo incremento. La ruta solo existe en el stage <code>academic</code>. El aviso «Simulación académica: no se ha realizado ningún cobro» está implementado; falta la captura.</td></tr>
+  <tr><td>HU-07</td><td>Ver historial propio</td><td>Cumplida</td><td>La consulta usa el <code>sub</code> del token. T09 PASS: operar sobre una donación ajena da 403 sin filtración. La API no expone la lectura de una donación por identificador, de modo que la prueba BOLA se ejerce con la ruta de simulación.</td></tr>
+  <tr><td>HU-08</td><td>Gestionar proyectos</td><td>Cumplida</td><td>Crear y publicar solo GESTOR (T03, T03b); la pantalla «Borradores» y <code>GET /v1/projects/drafts</code> se añadieron en el PR #5 y la publicación desde esa pantalla se observó en el despliegue. Publicar un proyecto ya publicado da 409. Sin operación de edición.</td></tr>
+  <tr><td>HU-09</td><td>Indicadores agregados</td><td>Cumplida</td><td>La estadística pública suma solo lo confirmado y no expone donantes. T08 mostró un incremento de +1000 céntimos.</td></tr>
+  <tr><td>HU-10</td><td>Consultar auditoría (extensión)</td><td>Parcial</td><td>Implementada (<code>GET /v1/audit</code>, filtros por tipo y fechas, solo AUDITOR); sin token da 401 (observado). Las filas de <code>AuditEvents</code> se verificaron con una consulta directa al índice, no con un AUDITOR real a través de la API: ninguna ejecución usó un usuario AUDITOR.</td></tr>
+  <tr><td>HU-11</td><td>MFA para roles privilegiados</td><td>Parcial</td><td>Configuración verificada: <code>MfaConfiguration: ON</code>, solo TOTP, sin SMS; CloudTrail registra eventos <code>MfaRegister</code> en el primer inicio de sesión; los usuarios de las pruebas entraron con TOTP. La evidencia de CA-11.2 (T14) está pendiente: falta la captura.</td></tr>
+  <tr><td>HU-12</td><td>Autorización externalizada (extensión)</td><td>Cumplida</td><td>Siete políticas Cedar evaluadas con Verified Permissions; esquema <code>STRICT</code> desplegado; T03, T09 y T12 pasaron con el motor externo. La comparación con la autorización embebida es de diseño: no existe una variante embebida que medir.</td></tr>
+</table>
+
+<h1>3. Arquitectura</h1>
+
+<p class="fig"><img src="figuras/fig1-arquitectura.png" width="640" alt="Figura 1. Arquitectura Zero Trust de AQP-SOLIDARIA"></p>
+<p class="cap">Figura 1. Arquitectura Zero Trust de AQP-SOLIDARIA</p>
+
+<h2>3.1 Componentes NIST SP 800-207</h2>
+
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>Componente NIST</th><th>Implementación</th></tr>
+  <tr><td>Policy Administrator (PA)</td><td>Amazon Cognito: autentica, exige TOTP, emite, renueva y revoca tokens y mantiene los grupos.</td></tr>
+  <tr><td>Policy Enforcement Point 1 (PEP 1)</td><td>JWT authorizer de API Gateway HTTP API (emisor, firma, expiración, <code>client_id</code> y scope de la ruta); para el sitio, CloudFront (TLS, cabeceras y acceso a S3 solo por OAC).</td></tr>
+  <tr><td>Policy Enforcement Point 2 (PEP 2)</td><td>El handler de cada función Lambda: lee identidad y grupos solo de claims verificados, comprueba el scope y convierte cualquier decisión distinta de <code>ALLOW</code> en 403 (falla cerrada).</td></tr>
+  <tr><td>Policy Engine (PE)</td><td>Amazon Verified Permissions con políticas Cedar (siete políticas, esquema <code>STRICT</code>).</td></tr>
+  <tr><td>Fuentes de información</td><td>Claims del token, estado del recurso en DynamoDB, logs de CloudWatch, tabla <code>AuditEvents</code> y el historial de eventos de CloudTrail.</td></tr>
+</table>
+
+<h2>3.2 Tecnologías</h2>
+
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>Capa</th><th>Tecnología (versión instalada)</th><th>Uso</th></tr>
+  <tr><td>Frontend</td><td>React y React DOM 19.3.1; Vite 8.3.6; Tailwind CSS 4.3.5; react-router-dom 7.18.5; lucide-react 1.70.0; TypeScript 6.0.3</td><td>SPA responsive; las rutas protegidas son solo ayuda de UX</td></tr>
+  <tr><td>OIDC en la SPA</td><td>oidc-client-ts 3.5.0 y react-oidc-context 3.3.1</td><td>Authorization Code + PKCE; tokens solo en memoria</td></tr>
+  <tr><td>Backend</td><td>TypeScript 7.0.2 sobre Node.js 24 (<code>nodejs24.x</code>); Zod 4.6.7; AWS SDK v3 (DynamoDB 3.1163.0, Verified Permissions 3.1166.0); esbuild 0.28.2</td><td>10 funciones Lambda empaquetadas con esbuild</td></tr>
+  <tr><td>API</td><td>Amazon API Gateway HTTP API</td><td>JWT authorizer, scopes por ruta, CORS restringido, limitación de tasa</td></tr>
+  <tr><td>Identidad</td><td>Amazon Cognito User Pool</td><td>OIDC, grupos, TOTP obligatorio</td></tr>
+  <tr><td>Autorización</td><td>Amazon Verified Permissions (Cedar)</td><td>Motor de políticas externo</td></tr>
+  <tr><td>Datos</td><td>Amazon DynamoDB bajo demanda (4 tablas)</td><td>Proyectos, donaciones, idempotencia y auditoría</td></tr>
+  <tr><td>Entrega</td><td>S3 privado y CloudFront con OAC y política de cabeceras de seguridad</td><td>TLS, CSP y cabeceras</td></tr>
+  <tr><td>Observabilidad</td><td>CloudWatch Logs (retención de 14 días) y CloudTrail (historial por defecto)</td><td>Logs JSON y trazabilidad de infraestructura</td></tr>
+  <tr><td>IaC</td><td>AWS SAM / CloudFormation (<code>infra/template.yaml</code>)</td><td>Infraestructura reproducible y eliminable</td></tr>
+  <tr><td>Pruebas</td><td>Vitest 5.1.0 (solo backend); ESLint 10.14.0 (solo frontend)</td><td>205 pruebas unitarias de backend; el frontend no tiene pruebas automáticas</td></tr>
+  <tr><td>CI</td><td>GitHub Actions, un único <code>.github/workflows/ci.yml</code> con Node 24 y <code>npm ci</code></td><td>Backend: typecheck, pruebas con cobertura, build y <code>npm audit --audit-level=high</code>. Frontend: lint, build y <code>npm audit --audit-level=high</code>. Sin despliegue ni credenciales AWS.</td></tr>
+</table>
+<p>Respecto de design.md, no se usan React Hook Form, TanStack Query, Radix UI, Prettier ni Testing Library; tampoco hay Dependabot configurado.</p>
+
+<h2>3.3 Flujo de una donación simulada</h2>
+
+<p class="fig"><img src="figuras/fig2-flujo-donacion.png" width="640" alt="Figura 2. Flujo de una donación simulada"></p>
+<p class="cap">Figura 2. Flujo de una donación simulada</p>
+
+<ol>
+  <li>El usuario inicia sesión en el login administrado de Cognito con Authorization Code + PKCE y su código TOTP; la SPA guarda el access token (15 minutos) solo en memoria.</li>
+  <li><code>POST /v1/donations</code> con el access token y una cabecera <code>Idempotency-Key</code> (UUID). API Gateway valida firma, emisor, expiración, <code>client_id</code> y scope.</li>
+  <li>Lambda verifica el scope, valida el cuerpo con Zod, consulta la clave de idempotencia y el proyecto (debe estar PUBLICADO) y pide la decisión <code>CreateDonation</code> a Verified Permissions.</li>
+  <li>Una única <code>TransactWriteItems</code> crea el registro de idempotencia (condición <code>attribute_not_exists(pk)</code>) y la donación en estado <code>PENDIENTE_SIMULACION</code>; se escribe el evento de auditoría y se responde 201.</li>
+  <li><code>POST /v1/donations/{id}/simulate</code> (solo en el stage <code>academic</code>): Lambda lee la donación, Verified Permissions evalúa <code>SimulateDonation</code> con la condición <code>principal.sub == resource.donorSub</code> y una transacción condicionada (<code>status = PENDIENTE_SIMULACION AND donorSub = :sub</code>) cambia el estado y, si se confirma, incrementa <code>confirmedAmountCents</code> del proyecto.</li>
+  <li>Se escribe el evento de auditoría y se responde 200.</li>
+</ol>
+<p>En el código, el evento de auditoría se escribe antes de devolver la respuesta, pero un fallo de esa escritura no cambia el resultado (ver 4.7).</p>
+
+<h1>4. Implementación de los controles Zero Trust</h1>
+
+<h2>4.1 Identidad y sesión (PA)</h2>
+
+<ul>
+  <li><b>User pool:</b> inicio de sesión por correo; solo un administrador crea usuarios (<code>AllowAdminCreateUserOnly: true</code>, cerrado en el PR #2); contraseña de al menos 8 caracteres con mayúscula, minúscula y número.</li>
+  <li><b>MFA obligatorio:</b> <code>MfaConfiguration: "ON"</code> con <code>SOFTWARE_TOKEN_MFA</code> (TOTP) y sin SMS, para todos los usuarios (PR #3). En el primer inicio de sesión el login administrado pide cambiar la contraseña temporal, muestra el código QR, y verifica el primer código; sin segundo factor no se emiten tokens.</li>
+  <li><b>App client:</b> público (sin secreto), solo el flujo <code>code</code>, con <code>ExplicitAuthFlows</code> limitado a SRP y renovación; la SPA usa PKCE. La plantilla no tiene un ajuste que imponga PKCE: lo aplica el cliente.</li>
+  <li><b>Tokens:</b> access e ID token de 15 minutos, refresh token de 1 día, <code>EnableTokenRevocation: true</code>, <code>PreventUserExistenceErrors: ENABLED</code>. Los scopes <code>api/projects.write</code>, <code>api/donations.write</code>, <code>api/donations.read</code> y <code>api/audit.read</code> pertenecen a un único servidor de recursos.</li>
+  <li><b>Tokens en memoria:</b> el almacén de usuario de oidc-client-ts es <code>InMemoryWebStorage</code>; <code>sessionStorage</code> solo conserva el estado transitorio de PKCE durante la redirección y una bandera booleana de continuidad de sesión. Al cerrar sesión se revocan el access y el refresh token y se borra la sesión local.</li>
+  <li><b>Recarga de la página:</b> los tokens se pierden. Si la bandera indica que hubo una sesión en esa pestaña, la SPA inicia una sola vez un nuevo flujo Authorization Code + PKCE; mientras la sesión del dominio alojado de Cognito siga vigente, el usuario vuelve a su ruta sin escribir credenciales, y si venció se muestra el inicio de sesión de Cognito. La bandera no contiene token, identificador ni claim, se borra al cerrar sesión, ante cualquier error y antes de redirigir (anti-bucle).</li>
+</ul>
+
+<h2>4.2 Punto de aplicación de políticas (PEP)</h2>
+
+<p>El JWT authorizer es el autorizador por defecto de la API: valida emisor (user pool), firma, expiración y <code>client_id</code> del app client. Solo tres lecturas son públicas, con <code>Authorizer: NONE</code> explícito. Las demás rutas declaran los scopes que exigen. Cada handler reverifica el scope (<code>verifyScope</code>, falla cerrada) y rechaza con 401 un evento sin claims, de modo que un authorizer mal configurado no abriría la ruta.</p>
+
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>Método y ruta</th><th>Acceso en API Gateway</th><th>Decisión de Verified Permissions</th></tr>
+  <tr><td>GET /v1/projects</td><td>Público</td><td>No aplica</td></tr>
+  <tr><td>GET /v1/projects/{projectId}</td><td>Público</td><td>No aplica</td></tr>
+  <tr><td>GET /v1/projects/{projectId}/stats</td><td>Público</td><td>No aplica</td></tr>
+  <tr><td>GET /v1/projects/drafts</td><td>Scope <code>api/projects.write</code></td><td><code>ListDraftProjects</code> (GESTOR)</td></tr>
+  <tr><td>POST /v1/projects</td><td>Scope <code>api/projects.write</code></td><td><code>CreateProject</code> (GESTOR)</td></tr>
+  <tr><td>PATCH /v1/projects/{projectId}/publish</td><td>Scope <code>api/projects.write</code></td><td><code>PublishProject</code> (GESTOR)</td></tr>
+  <tr><td>POST /v1/donations</td><td>Scope <code>api/donations.write</code></td><td><code>CreateDonation</code> (DONANTE, proyecto PUBLICADO)</td></tr>
+  <tr><td>POST /v1/donations/{donationId}/simulate</td><td>Scope <code>api/donations.write</code>; solo stage <code>academic</code></td><td><code>SimulateDonation</code> (DONANTE propietario)</td></tr>
+  <tr><td>GET /v1/donations/me</td><td>Scope <code>api/donations.read</code></td><td><code>ReadMyDonations</code> (DONANTE)</td></tr>
+  <tr><td>GET /v1/audit</td><td>Scope <code>api/audit.read</code></td><td><code>ReadAuditLogs</code> (AUDITOR)</td></tr>
+</table>
+
+<p>Controles adicionales del borde: CORS limitado al dominio de CloudFront y a <code>http://localhost:5173</code> (una solicitud de preflight desde otro origen no recibe <code>access-control-allow-origin</code>); limitación de tasa del stage de 10 solicitudes por segundo con ráfaga de 20; log de acceso JSON del stage con <code>requestId</code>, ruta, estado, latencia y error del authorizer, sin la cabecera <code>Authorization</code> ni el cuerpo.</p>
+
+<p>Observaciones del despliegue: sin token, la API responde 401; con un token alterado, 401. Un ID token tiene firma y emisor válidos y se rechaza al comprobar el scope de la ruta, con <b>403</b> y no con 401 (el requisito CA-03.2 esperaba 401; es un comportamiento del servicio y no es configurable). Además, todos los access tokens llevan todos los scopes del app client, también <code>api/projects.write</code> en los donantes: el scope acota el tipo de token, no el rol, y el rol lo decide Verified Permissions a partir del grupo.</p>
+
+<h2>4.3 Motor de políticas (PE) y propiedad del recurso</h2>
+
+<p>La autorización se externaliza por completo en Verified Permissions: no hay un RBAC embebido paralelo. El módulo <code>authz</code> solo extrae claims verificados (el authorizer entrega <code>cognito:groups</code> como texto, por ejemplo <code>[DONANTE]</code>, que <code>parseClaimList</code> normaliza) y comprueba scopes. Para cada decisión, Lambda construye en el servidor las entidades: el usuario (<code>sub</code> del token) con sus grupos como padres, y el recurso, cuyos atributos (<code>donorSub</code>, <code>status</code>) provienen de DynamoDB, nunca del cliente. Cualquier error del motor o una configuración ausente producen un 500 genérico sin ejecutar la operación (falla cerrada).</p>
+
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>Acción Cedar</th><th>Grupo</th><th>Recurso</th><th>Condición</th></tr>
+  <tr><td><code>CreateProject</code></td><td>GESTOR</td><td>Singleton <code>Application</code></td><td>Ninguna</td></tr>
+  <tr><td><code>ListDraftProjects</code></td><td>GESTOR</td><td>Singleton <code>Application</code></td><td>Ninguna (cualquier GESTOR ve todos los borradores)</td></tr>
+  <tr><td><code>PublishProject</code></td><td>GESTOR</td><td><code>Project</code> (atributo <code>status</code> opcional; no se envía)</td><td>Ninguna</td></tr>
+  <tr><td><code>CreateDonation</code></td><td>DONANTE</td><td><code>Project</code> con <code>status</code> leído de DynamoDB</td><td><code>resource has status &amp;&amp; resource.status == "PUBLICADO"</code></td></tr>
+  <tr><td><code>SimulateDonation</code></td><td>DONANTE</td><td><code>Donation</code> con <code>donorSub</code> y <code>status</code> leídos de DynamoDB</td><td><code>principal.sub == resource.donorSub</code></td></tr>
+  <tr><td><code>ReadMyDonations</code></td><td>DONANTE</td><td>Singleton <code>Application</code></td><td>Ninguna en Cedar (ver abajo)</td></tr>
+  <tr><td><code>ReadAuditLogs</code></td><td>AUDITOR</td><td>Singleton <code>Application</code></td><td>Ninguna; el MFA se exige en Cognito porque el access token no incluye <code>amr</code></td></tr>
+</table>
+
+<ul>
+  <li><b>Esquema <code>STRICT</code>.</b> El almacén valida cada política contra un esquema embebido (<code>Schema.CedarJson</code>), de modo que un nombre erróneo de entidad, acción o atributo hace fallar el despliegue. Su forma legible es <code>policies/schema.cedarschema</code>. Las acciones que no operan sobre una entidad concreta usan el singleton <code>Application</code>.</li>
+  <li><b>Propiedad solo en <code>SimulateDonation</code>.</b> Es la única política con condición de propiedad, porque la donación se lee de DynamoDB antes de autorizar. Una segunda barrera independiente es la condición <code>donorSub = :sub</code> de la transacción.</li>
+  <li><b>Propiedad del historial estructural.</b> <code>ReadMyDonations</code> solo exige el grupo DONANTE. Una condición <code>principal.sub == resource.donorSub</code> sería una tautología, porque el recurso lo construye el propio handler con el <code>sub</code> del token; la propiedad se garantiza porque la consulta usa ese <code>sub</code> como clave de partición del índice <code>donorSub-createdAt</code> y no acepta identificadores del cliente (hay una prueba unitaria).</li>
+  <li><b>Mantenimiento.</b> Las reglas viven en <code>policies/*.cedar</code> y en <code>infra/template.yaml</code>; una prueba unitaria (<code>cedar-schema.test.ts</code>) compara las siete sentencias. No se ejecutó <code>cedar validate</code>.</li>
+</ul>
+
+<p class="fig"><img src="figuras/fig3-decision-por-solicitud.png" width="640" alt="Figura 3. Decisión de acceso por solicitud"></p>
+<p class="cap">Figura 3. Decisión de acceso por solicitud</p>
+
+<p><b>Autorización embebida frente a externalizada (CA-12.2).</b> La comparación es de diseño, no experimental, porque no existe una variante embebida con la que medir.</p>
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>Aspecto</th><th>Embebida (en el código)</th><th>Externalizada (Cedar + Verified Permissions)</th></tr>
+  <tr><td>Ubicación de las reglas</td><td>Condicionales en los handlers</td><td>Políticas declarativas, una por regla, en la plantilla</td></tr>
+  <tr><td>Denegación por defecto</td><td>Hay que programarla</td><td>Propia del motor</td></tr>
+  <tr><td>Cambio de una regla</td><td>Despliegue de código</td><td>Cambio de política; sigue pasando por un despliegue de la pila</td></tr>
+  <tr><td>Verificación</td><td>Pruebas unitarias reales</td><td>Esquema <code>STRICT</code>; las pruebas unitarias simulan el motor</td></tr>
+  <tr><td>Costo operativo</td><td>Sin dependencia adicional</td><td>Una llamada de red por solicitud (latencia no medida); si el servicio falla, las rutas protegidas devuelven 500</td></tr>
+</table>
+
+<h2>4.4 Validación e integridad</h2>
+
+<ul>
+  <li><b>Validación en el servidor (Zod):</b> <code>amountCents</code> entero entre 100 y 100000; <code>Idempotency-Key</code> con formato UUID; <code>result</code> limitado a <code>CONFIRMADA_SIMULADA</code> o <code>RECHAZADA_SIMULADA</code>; título de 3 a 150 caracteres, descripción de al menos 10, finalidad de al menos 5 y meta entera positiva en céntimos; <code>limit</code> entre 1 y 100. Un JSON malformado responde 400, no 500. El dinero se maneja siempre en céntimos enteros.</li>
+  <li><b>Idempotencia atómica:</b> la clave es <code>sub#createDonation#clave</code>, con <code>payloadHash</code> SHA-256 del cuerpo normalizado y TTL de 24 horas. La reserva de la clave y la donación se escriben en una sola <code>TransactWriteItems</code>.</li>
+  <li><b>Transición condicionada:</b> la confirmación actualiza la donación solo si sigue pendiente y es del donante, y suma el monto al proyecto en la misma transacción.</li>
+  <li><b>Conflictos:</b> <code>ConditionalCheckFailedException</code>, <code>TransactionCanceledException</code> y <code>TransactionConflictException</code> se traducen a 409, nunca a 500. La publicación de un proyecto también está condicionada a que siga en BORRADOR.</li>
+  <li>Las lecturas por clave primaria que preceden a una decisión usan <code>ConsistentRead</code>.</li>
+</ul>
+<pre>-- Crear donación (TransactWriteItems)
+Idempotency: ConditionExpression = attribute_not_exists(pk)
+Donations:   ConditionExpression = attribute_not_exists(donationId)
+
+-- Simular (TransactWriteItems)
+Donations: ConditionExpression = #s = :pending AND donorSub = :sub
+Projects:  UpdateExpression    = ADD confirmedAmountCents :amt   (solo si se confirma)</pre>
+<p>Resultado en el despliegue: T06 (misma clave y carga, misma donación), T07 (otra carga, 409) y T08 (diez confirmaciones simultáneas, un solo incremento).</p>
+
+<h2>4.5 Mínimo privilegio</h2>
+
+<p>Cada una de las 10 funciones tiene su propio rol con las acciones y los recursos exactos que usa; las políticas propias no usan <code>Action: "*"</code> ni <code>Resource: "*"</code>. La política administrada <code>AVPAuthPolicy</code> (<code>verifiedpermissions:IsAuthorized</code> solo sobre el ARN del almacén) se adjunta únicamente a las siete funciones protegidas. Todas reciben además <code>AWSLambdaBasicExecutionRole</code> para escribir logs, cuyos permisos no están acotados a los grupos de logs de la pila. Cada función tiene un tiempo máximo de 10 s, 256 MB y su propio grupo de logs; no hay URL de función ni otras fuentes de eventos que la ruta HTTP.</p>
+
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>Función</th><th>Acciones DynamoDB y recursos</th><th>Verified Permissions</th></tr>
+  <tr><td><code>ListProjectsFunction</code></td><td><code>Query</code> en <code>Projects/index/status-createdAt</code></td><td>No</td></tr>
+  <tr><td><code>GetProjectFunction</code></td><td><code>GetItem</code> en <code>Projects</code></td><td>No</td></tr>
+  <tr><td><code>GetProjectStatsFunction</code></td><td><code>GetItem</code> en <code>Projects</code></td><td>No</td></tr>
+  <tr><td><code>CreateProjectFunction</code></td><td><code>PutItem</code> en <code>Projects</code> y <code>AuditEvents</code></td><td>Sí</td></tr>
+  <tr><td><code>PublishProjectFunction</code></td><td><code>GetItem</code> y <code>UpdateItem</code> en <code>Projects</code>; <code>PutItem</code> en <code>AuditEvents</code></td><td>Sí</td></tr>
+  <tr><td><code>ListDraftProjectsFunction</code></td><td><code>Query</code> en <code>Projects/index/status-createdAt</code>; <code>PutItem</code> en <code>AuditEvents</code></td><td>Sí</td></tr>
+  <tr><td><code>CreateDonationFunction</code></td><td><code>GetItem</code> en <code>Idempotency</code> y <code>Projects</code>; <code>PutItem</code> en <code>Idempotency</code>, <code>Donations</code> y <code>AuditEvents</code></td><td>Sí</td></tr>
+  <tr><td><code>SimulateDonationFunction</code> (solo stage <code>academic</code>)</td><td><code>GetItem</code> y <code>UpdateItem</code> en <code>Donations</code>; <code>UpdateItem</code> en <code>Projects</code>; <code>PutItem</code> en <code>AuditEvents</code></td><td>Sí</td></tr>
+  <tr><td><code>ListMyDonationsFunction</code></td><td><code>Query</code> en <code>Donations/index/donorSub-createdAt</code>; <code>PutItem</code> en <code>AuditEvents</code></td><td>Sí</td></tr>
+  <tr><td><code>ListAuditLogsFunction</code></td><td><code>Query</code> en <code>AuditEvents</code> y en <code>AuditEvents/index/AllAuditLogsIndex</code>; <code>PutItem</code> en <code>AuditEvents</code></td><td>Sí</td></tr>
+</table>
+<p>Las funciones de consulta solo reciben <code>PutItem</code> sobre <code>AuditEvents</code> para registrar rechazos; ninguna puede escribir en <code>Projects</code> o <code>Donations</code> salvo las que lo necesitan. La evidencia del despliegue es estática (T10, sección 6).</p>
+
+<h2>4.6 Navegador y entrega</h2>
+
+<ul>
+  <li><b>S3 privado:</b> bloqueo total de acceso público, <code>BucketOwnerEnforced</code>, cifrado AES256 y una política que solo permite <code>s3:GetObject</code> al servicio CloudFront con la condición <code>AWS:SourceArn</code> de la distribución (OAC con SigV4). El acceso directo a un objeto del bucket devolvió 403.</li>
+  <li><b>CloudFront:</b> <code>redirect-to-https</code> (el acceso por HTTP devolvió 301), clase de precio <code>PriceClass_100</code>, certificado por defecto de <code>*.cloudfront.net</code>, caché corta (300 s por defecto) y respaldo de SPA (403 y 404 sirven <code>/index.html</code>).</li>
+</ul>
+
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>Cabecera de respuesta</th><th>Valor</th></tr>
+  <tr><td>Strict-Transport-Security</td><td><code>max-age=31536000; includeSubDomains</code></td></tr>
+  <tr><td>X-Content-Type-Options</td><td><code>nosniff</code></td></tr>
+  <tr><td>Referrer-Policy</td><td><code>no-referrer</code></td></tr>
+  <tr><td>X-Frame-Options</td><td><code>DENY</code></td></tr>
+  <tr><td>Permissions-Policy</td><td><code>camera=(), microphone=(), geolocation=()</code> (definida en la plantilla; no figura entre las cabeceras capturadas el 2026-11-11, queda por verificar)</td></tr>
+  <tr><td>Content-Security-Policy</td><td>Ver el bloque siguiente</td></tr>
+</table>
+<pre>default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self';
+connect-src 'self' https://*.execute-api.us-east-2.amazonaws.com https://&lt;dominio-cognito&gt; https://cognito-idp.us-east-2.amazonaws.com;
+base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; manifest-src 'self'</pre>
+<p>La CSP no usa <code>'unsafe-inline'</code> en scripts ni estilos. El <code>connect-src</code> usa el comodín de <code>execute-api</code> de la región y no la API concreta, para evitar una dependencia circular entre la distribución y el CORS de la API (limitación, ver sección 7).</p>
+
+<h2>4.7 Observabilidad y auditoría</h2>
+
+<ul>
+  <li><b>Logs JSON:</b> cada invocación emite una línea de acceso con <code>requestId</code>, acción, resultado, código HTTP, duración y, si hubo error, su código; la retención es de 14 días. El logger redacta claves sensibles y no registra cabeceras, tokens, cuerpos ni el evento crudo.</li>
+  <li><b>CloudTrail:</b> se usa el historial de eventos que AWS activa por defecto; la plantilla no define un trail propio.</li>
+  <li><b><code>AuditEvents</code>:</b> cada evento lleva <code>timestamp</code>, <code>requestId</code>, <code>eventId</code>, <code>eventType</code>, <code>action</code>, <code>outcome</code>, actor seudonimizado (<code>actor_</code> más 8 caracteres de un SHA-256 del <code>sub</code>, o <code>actor_unknown</code> sin identidad verificada) y <code>resourceRef</code>. Los siete handlers protegidos registran las escrituras exitosas (<code>SUCCESS</code>) y los rechazos posteriores a la autenticación: <code>DENIED</code> (401 o 403), <code>FAILURE</code> (400, 404 o 409) y <code>ERROR</code> (5xx). No se registran las consultas exitosas ni las solicitudes que API Gateway rechaza antes de invocar a Lambda.</li>
+</ul>
+
+<p><b>Rechazos auditados.</b> Consulta al índice <code>AllAuditLogsIndex</code> inmediatamente después de la segunda ejecución de aceptación (2026-11-11, hora UTC). Los 35 eventos más recientes se repartían en 17 <code>SUCCESS</code>, 15 <code>FAILURE</code> y 3 <code>DENIED</code>. Extracto:</p>
+<pre>20:35:20.502  DONATION_EVENT  LIST_MY_DONATIONS       DENIED   actor_71b3623f  n/a                (T12)
+20:35:18.302  DONATION_EVENT  SIMULATE_DONATION       DENIED   actor_95ee128d  don_411ae3363a09   (T09)
+20:35:17.024 - 20:35:17.175   SIMULATE_DONATION       FAILURE  actor_0420370a  don_e322f7e17fc2   (T08, 9 eventos)
+20:35:16.962  DONATION_EVENT  SIMULATE_DONATION       SUCCESS  actor_0420370a  don_e322f7e17fc2   (T08, 1 evento)
+20:35:10.632  DONATION_EVENT  CREATE_DONATION_INTENT  FAILURE  actor_0420370a  n/a                (T07)
+20:35:04.665 - 20:35:07.528   CREATE_DONATION_INTENT  FAILURE  actor_0420370a  n/a                (T04, 5 eventos)
+20:35:03.494  PROJECT_EVENT   CREATE_PROJECT          DENIED   actor_0420370a  n/a                (T03)</pre>
+<p>La auditoría reproduce T08 con exactitud (una confirmación <code>SUCCESS</code> y nueve <code>FAILURE</code> sobre la misma donación). Ningún evento contiene tokens, importes ni el <code>sub</code> en claro (CA-10.2). Dos observaciones: la repetición idempotente de T06 genera un segundo evento <code>SUCCESS</code> para la misma donación, y los rechazos del authorizer (401) solo quedan en el log de acceso del stage.</p>
+
+<p class="pend">[CAPTURA PENDIENTE: vista «Auditoría» de la SPA con un usuario AUDITOR, filtrada por «Eventos de donaciones», donde se vean filas Correcto, Fallido y Denegado; sin correos ni tokens en pantalla.]</p>
+<p class="pend">[CAPTURA PENDIENTE: CloudWatch Logs con una línea de acceso exitosa y otra rechazada (401/403), con los identificadores sanitizados (CA-NF07.2).]</p>
+
+<h2>4.8 Stage académico</h2>
+
+<ul>
+  <li>La función <code>SimulateDonationFunction</code>, su grupo de logs y su ruta existen solo si <code>StageName</code> es <code>academic</code> (condición <code>IsAcademicStage</code> de la plantilla). Como defensa adicional, el servicio rechaza con 403 cualquier ejecución cuando <code>STAGE</code> no es <code>academic</code>.</li>
+  <li>La interfaz muestra «Simulación académica: no se ha realizado ningún cobro» en el detalle del proyecto, junto al formulario de donación, y en «Mis donaciones».</li>
+  <li>No se solicitan datos de pago; el modelo no tiene campos para ellos.</li>
+  <li>El presupuesto de AWS Budgets (1 USD mensual, aviso al 80 %) es un recurso condicionado al parámetro <code>BudgetAlertEmail</code>, vacío por defecto; el despliegue usa <code>parameter_overrides = "StageName=academic"</code>, por lo que la alerta no existe.</li>
+</ul>
+<p class="pend">[CAPTURA PENDIENTE: detalle de un proyecto publicado, con sesión de DONANTE, mostrando el formulario de donación y el aviso «Simulación académica: no se ha realizado ningún cobro».]</p>
+
+<h1>5. Mapeo a NIST SP 800-207</h1>
+
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>#</th><th>Principio</th><th>Control implementado</th><th>Evidencia</th><th>Cobertura</th></tr>
+  <tr><td>1</td><td>Todo dato y servicio es un recurso</td><td>Cada ruta tiene autorización explícita (público, o scope más política Cedar); un rol y tablas propios por función</td><td>Tabla de rutas (4.2); tabla IAM (4.5); T10 (estática)</td><td>Total</td></tr>
+  <tr><td>2</td><td>Comunicación segura sin importar la red</td><td>HTTPS en CloudFront (redirección y HSTS) y en API Gateway; S3 solo por OAC</td><td>301 a HTTPS y acceso directo a S3 con 403 (observados)</td><td>Total (certificado por defecto de <code>*.cloudfront.net</code>)</td></tr>
+  <tr><td>3</td><td>Acceso por sesión y por recurso</td><td>Access token de 15 minutos, scope por ruta, propiedad por recurso (Cedar y condición de DynamoDB)</td><td>T09, T11, T13</td><td>Total, con la limitación de que la revocación inmediata de un access token no existe (T13)</td></tr>
+  <tr><td>4</td><td>Política dinámica</td><td>Decisión por solicitud con grupo, <code>sub</code>, estado del recurso y stage</td><td>T03, T03b, T12</td><td>Total respecto del diseño; sin atributos de dispositivo ni de riesgo</td></tr>
+  <tr><td>5</td><td>Monitorear la integridad y la postura de los activos</td><td>CloudTrail (historial por defecto) y <code>npm audit</code> en CI</td><td>CI</td><td><b>Parcial</b>: sin postura de dispositivo, GuardDuty, Security Hub, Config, alarmas ni Dependabot</td></tr>
+  <tr><td>6</td><td>Autenticación y autorización estrictas antes del acceso</td><td>JWT authorizer, Verified Permissions y TOTP obligatorio</td><td>T02, T11; configuración de MFA verificada; T14 pendiente</td><td>Total en configuración; la prueba T14 (captura) sigue pendiente. El TOTP se aplica por usuario, no por claim</td></tr>
+  <tr><td>7</td><td>Recolectar información para mejorar la postura</td><td>Logs JSON, <code>AuditEvents</code> (éxitos y rechazos) y CloudTrail</td><td>Extracto de auditoría (4.7)</td><td>Total en recolección; sin análisis ni alertas automáticas</td></tr>
+</table>
+
+<h1>6. Pruebas de aceptación (T01–T14)</h1>
+
+<p><b>Pruebas unitarias.</b> El backend tiene <b>205 pruebas Vitest</b> en 9 archivos (<code>npm test</code> en <code>backend/</code>, todas superadas). Simulan DynamoDB y Verified Permissions, por lo que no sustituyen a las pruebas contra el despliegue.</p>
+
+<p><b>Pruebas contra el despliegue.</b> <code>scripts/acceptance.sh</code> se ejecutó tres veces contra el stage <code>academic</code> con usuarios reales (dos DONANTE y un GESTOR, con MFA TOTP): la primera, 11 PASS, 0 FAIL y 3 omitidas; la segunda, tras el endurecimiento (auditoría de rechazos, esquema <code>STRICT</code> y política <code>ReadMyDonations</code>), con el mismo resultado y sin regresión; la tercera, tras añadir <code>GET /v1/projects/drafts</code>, 12 PASS, 0 FAIL y 3 omitidas (se suma T03b). Las omitidas son T10, T13 y T14, que no se pueden automatizar con <code>curl</code>; T13 se ejecutó después de forma manual. No hubo ejecución con un usuario AUDITOR.</p>
+
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>ID</th><th>Escenario</th><th>Esperado</th><th>Estado</th><th>Evidencia</th></tr>
+  <tr><td>T01</td><td>Visitante consulta proyectos</td><td>200, sin borradores</td><td>PASS</td><td>El borrador no aparece en el catálogo y responde 404 por identificador</td></tr>
+  <tr><td>T02</td><td>Sin token intenta donar</td><td>401</td><td>PASS</td><td>401 <code>{"message":"Unauthorized"}</code> (API Gateway)</td></tr>
+  <tr><td>T03</td><td>Donante intenta crear proyecto</td><td>403</td><td>PASS</td><td>403 <code>{"code":"FORBIDDEN","message":"Acceso denegado (Zero Trust PE): Operación no permitida.","requestId":"..."}</code></td></tr>
+  <tr><td>T03b (adicional)</td><td>Donante intenta listar borradores; gestor los lista</td><td>403 al donante; 200 al gestor</td><td>PASS</td><td>Tercera ejecución; el borrador aparece antes de publicarse y la respuesta no contiene <code>createdBy</code></td></tr>
+  <tr><td>T04</td><td>Donante envía 0, 100001 o un valor no entero</td><td>400</td><td>PASS</td><td>400 con 0, 100001, 12.5, <code>"2500"</code> y sin <code>Idempotency-Key</code></td></tr>
+  <tr><td>T05</td><td>Donante crea una intención válida</td><td>201, pendiente, sin cargo</td><td>PASS</td><td>201 con estado <code>PENDIENTE_SIMULACION</code></td></tr>
+  <tr><td>T06</td><td>Repite clave y carga idénticas</td><td>Mismo resultado, una sola donación</td><td>PASS</td><td>Mismo <code>donationId</code>; el historial creció en exactamente 1 (0 a 1)</td></tr>
+  <tr><td>T07</td><td>Repite la clave con otra carga</td><td>409</td><td>PASS</td><td>409 «La clave de idempotencia ya fue utilizada con otro payload.»</td></tr>
+  <tr><td>T08</td><td>10 confirmaciones concurrentes de la misma donación</td><td>Un solo incremento</td><td>PASS</td><td>1 × 200 y 9 × 409; acumulado +1000 céntimos; auditoría con 1 SUCCESS y 9 FAILURE (Figura 5)</td></tr>
+  <tr><td>T09</td><td>Donante consulta una donación ajena</td><td>403/404 sin filtración</td><td>PASS</td><td>403 sin filtración; la donación del propietario sigue en <code>PENDIENTE_SIMULACION</code></td></tr>
+  <tr><td>T10</td><td>La Lambda de listado intenta escribir en DynamoDB</td><td><code>AccessDenied</code> y error controlado</td><td>Evidencia estática</td><td>Política del rol de <code>ListProjectsFunction</code> (abajo). El IAM Policy Simulator devuelve <code>explicitDeny</code> para toda acción en esta cuenta por la SCP de la organización, por lo que no sirve como prueba dinámica</td></tr>
+  <tr><td>T11</td><td>ID token o token alterado como Bearer</td><td>401</td><td>PASS con desviación</td><td>Token alterado: 401. ID token: <b>403</b> (el authorizer lo rechaza al comprobar el scope de la ruta)</td></tr>
+  <tr><td>T12</td><td>Gestor consulta el historial de un donante</td><td>403/404</td><td>PASS</td><td>403; la respuesta no contiene datos de donaciones</td></tr>
+  <tr><td>T13</td><td>Token revocado usado antes de expirar</td><td>Aceptado hasta expirar (limitación documentada); rechazado después</td><td>PASS</td><td>Ejecución manual, Figura 4</td></tr>
+  <tr><td>T14</td><td>Usuario GESTOR inicia sesión sin segundo factor</td><td>No obtiene tokens</td><td><b>PENDIENTE</b></td><td>Configuración verificada (<code>MfaConfiguration: ON</code>, solo TOTP, sin SMS; eventos <code>MfaRegister</code> en CloudTrail). Falta la captura del desafío TOTP</td></tr>
+</table>
+
+<h3>T10: evidencia estática</h3>
+<p>Política en línea del rol de <code>ListProjectsFunction</code>, única sentencia; el rol no concede ninguna acción de escritura sobre ninguna tabla (además de la política administrada de logs):</p>
+<pre>{
+  "Effect": "Allow",
+  "Action": "dynamodb:Query",
+  "Resource": "arn:aws:dynamodb:us-east-2:&lt;id-de-cuenta&gt;:table/Projects-academic/index/status-createdAt"
+}</pre>
+
+<h3>T08: confirmaciones concurrentes</h3>
+<p class="fig"><img src="figuras/fig5-t08-concurrencia.png" width="640" alt="Figura 5. T08: diez confirmaciones concurrentes de una misma donación"></p>
+<p class="cap">Figura 5. T08: diez confirmaciones concurrentes de una misma donación</p>
+
+<h3>T13: token revocado</h3>
+<p>Se usó el mismo access token durante toda la prueba (emitido hacia las 19:56:48 UTC, con vencimiento a las 20:11:48 UTC). Horas en UTC, 2026-11-11; los tokens no se registran.</p>
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>Hora (UTC)</th><th>Paso</th><th>Resultado</th></tr>
+  <tr><td>19:56:48</td><td><code>GET /v1/donations/me</code> con el access token vigente</td><td>200</td></tr>
+  <tr><td>hacia 19:57:00</td><td>Revocación del refresh token con <code>/oauth2/revoke</code></td><td>200</td></tr>
+  <tr><td>19:57:04</td><td>Mismo access token</td><td>200 (se acepta tras la revocación)</td></tr>
+  <tr><td>posterior (sin hora registrada)</td><td>Intento de renovar con el refresh token revocado</td><td><code>invalid_grant</code></td></tr>
+  <tr><td>19:57:34, 20:01:45, 20:02:58, 20:03:01 y 20:03:02</td><td>Mismo access token</td><td>200 en cada llamada</td></tr>
+  <tr><td>20:11:50</td><td>Mismo access token, dos segundos después de expirar</td><td>401</td></tr>
+</table>
+<p class="fig"><img src="figuras/fig4-t13-linea-de-tiempo.png" width="640" alt="Figura 4. T13: token revocado aceptado hasta su expiración"></p>
+<p class="cap">Figura 4. T13: token revocado aceptado hasta su expiración</p>
+<p>La revocación solo impidió renovar el token: el JWT authorizer valida firma y expiración de forma local y no consulta revocaciones, de modo que el access token revocado siguió siendo válido unos 15 minutos. Se cumple lo que T13 espera (aceptado hasta expirar y rechazado después) y la exposición queda acotada por la vida del token (AD-07, CA-03.4).</p>
+
+<h3>Capturas pendientes</h3>
+<p class="pend">[CAPTURA PENDIENTE: T14. Pantalla de Cognito que solicita el código de la aplicación autenticadora (TOTP) al iniciar sesión con un usuario del grupo GESTOR, sin que se hayan emitido tokens; sin correo, código ni cookies visibles. Con esta captura T14 pasaría a PASS.]</p>
+<p class="pend">[CAPTURA PENDIENTE: pantalla «Borradores» (<code>/projects/drafts</code>) con sesión de GESTOR, mostrando un borrador con su botón de publicación, antes de publicarlo.]</p>
+<p class="pend">[CAPTURA PENDIENTE: vista «Auditoría» con filas Denegado y Fallido (ver 4.7).]</p>
+<p class="pend">[CAPTURA PENDIENTE: aviso «Simulación académica: no se ha realizado ningún cobro» (ver 4.8).]</p>
+
+<h1>7. Desviaciones, limitaciones y brechas conocidas</h1>
+
+<h2>7.1 Desviaciones respecto del diseño</h2>
+<ol>
+  <li><b>Región <code>us-east-2</code> en lugar de <code>us-east-1</code>.</b> La cuenta pertenece a una AWS Organization cuya política de control de servicios (SCP) deniega las demás regiones. Se cumple la condición de usar una sola región.</li>
+  <li><b>MFA TOTP obligatorio para todos los usuarios.</b> Con MFA opcional, el login administrado de Cognito no ofrece registrar TOTP y un usuario privilegiado podría entrar solo con contraseña. Es más estricto que la matriz de requisitos (solo GESTOR y AUDITOR).</li>
+  <li><b>ID token rechazado con 403 en lugar de 401.</b> El authorizer valida firma y emisor del ID token y lo rechaza al comprobar el scope; ese rechazo produce 403 y no es configurable.</li>
+  <li><b>Todos los access tokens llevan todos los scopes del app client.</b> El control de rol lo ejerce Verified Permissions a partir del grupo, no el scope.</li>
+  <li>Además: Verified Permissions se usa en todas las rutas protegidas, sin RBAC embebido paralelo (design.md lo planteaba como MVP, con Verified Permissions como extensión), y la CI es un único <code>ci.yml</code>.</li>
+</ol>
+
+<h2>7.2 Limitaciones vigentes</h2>
+<ul>
+  <li><b>Revocación de JWT:</b> un access token revocado se acepta hasta expirar (T13, unos 15 minutos).</li>
+  <li><b>Sin postura de dispositivo, evaluación continua de riesgo ni ZTNA</b> (no disponibles en el plan Free).</li>
+  <li><b>Sin WAF:</b> HTTP API no se integra con AWS WAF y no hay WAF delante de CloudFront; la limitación de tasa del stage (10 solicitudes por segundo, ráfaga de 20) es la única defensa.</li>
+  <li><b>CSP con comodín en <code>connect-src</code></b> (<code>https://*.execute-api.us-east-2.amazonaws.com</code>), por no referenciar la API concreta.</li>
+  <li><b>Carrera de idempotencia:</b> dos solicitudes simultáneas con la misma clave y carga pueden dar un 409 a la segunda en lugar de repetir la respuesta (HU-05).</li>
+  <li><b>Auditoría duplicada en la repetición idempotente:</b> repetir una solicitud ya registrada escribe un segundo evento <code>SUCCESS</code> para la misma donación.</li>
+  <li><b>Auditoría de mejor esfuerzo:</b> un fallo al escribir el evento se registra en el log y no cambia la respuesta; un 5xx por indisponibilidad de DynamoDB probablemente tampoco deje evento. No se auditan las consultas exitosas ni los rechazos de API Gateway (401, 403 por scope, 429).</li>
+  <li><b>Cuenta compartida por el equipo:</b> el aislamiento entre integrantes depende de IAM y de la disciplina del equipo.</li>
+  <li><b>T10 sin <code>AccessDenied</code> en vivo:</b> solo hay evidencia estática de la política del rol.</li>
+  <li><b>RNF-HU-05 (rendimiento) y RNF-HU-06 (accesibilidad) no medidos.</b></li>
+  <li><b>AWS Budgets:</b> el parámetro <code>BudgetAlertEmail</code> existe pero no se indicó ningún correo, de modo que no hay alerta de presupuesto (CA-NF09.1).</li>
+  <li><b>MFA fuera de Cedar:</b> el access token de Cognito no incluye <code>amr</code>; el TOTP se exige en el user pool, no en la política.</li>
+  <li><b>Autorregistro y PKCE:</b> la plantilla no puede imponer PKCE en el app client (lo aplica el cliente). La URL <code>http://localhost:5173</code> queda registrada como callback también en el despliegue.</li>
+  <li><b>Sin registros de acceso de CloudFront ni S3, sin alarmas de CloudWatch ni copias de respaldo de DynamoDB; Dependabot no está configurado.</b></li>
+  <li><b>Enumeración menor:</b> <code>POST /v1/donations/{id}/simulate</code> distingue 404 (no existe) de 403 (ajena).</li>
+  <li><b>HU-10 sin ejecución con un AUDITOR real,</b> T14 pendiente de captura y limpieza de recursos (CA-NF09.2) no ejecutada: la pila sigue activa.</li>
+</ul>
+
+<h2>7.3 Brechas cerradas durante el laboratorio</h2>
+<ul>
+  <li>Lectura errónea de <code>cognito:groups</code>: llega como texto (<code>[DONANTE]</code>); <code>parseClaimList</code> lo normaliza (PR #1).</li>
+  <li>Faltaban permisos <code>permit</code> de Cedar para acciones que el backend consulta (PR #1).</li>
+  <li>Tres políticas Cedar en un único recurso, que admite una sola sentencia: ahora hay un recurso por política (PR #1).</li>
+  <li><code>Mode: OFF</code> sin comillas, que YAML lee como booleano: se corrigió a <code>"OFF"</code> y luego a <code>"STRICT"</code> (PR #1 y PR #4).</li>
+  <li><code>TransactionCanceledException</code> sin capturar, que producía 500 ante una carrera: se traduce a 409 (PR #1).</li>
+  <li>Tokens guardados en <code>sessionStorage</code>: ahora solo en memoria (PR #1).</li>
+  <li>El detalle público del proyecto exponía <code>createdBy</code> (el <code>sub</code> del gestor) (PR #2).</li>
+  <li>Registro abierto de usuarios: ahora solo un administrador crea usuarios (PR #2).</li>
+  <li>Los rechazos no quedaban auditados: ahora se registran <code>DENIED</code>, <code>FAILURE</code> y <code>ERROR</code> (PR #4).</li>
+  <li>Condición Cedar tautológica en <code>ReadMyDonations</code> (comparaba al usuario consigo mismo): retirada, con propiedad estructural y prueba unitaria (PR #4).</li>
+  <li>Validación del almacén de Verified Permissions desactivada: ahora <code>STRICT</code> con esquema embebido (PR #4).</li>
+  <li>Borradores inalcanzables: un proyecto en BORRADOR solo podía publicarse inmediatamente después de crearlo; ahora existe <code>GET /v1/projects/drafts</code> y la pantalla «Borradores» (PR #5).</li>
+</ul>
+
+<h1>8. Declaración de uso de inteligencia artificial</h1>
+
+<p>La declaración completa está en <code>AI_USAGE.md</code>, que existe en <code>main</code>. Los campos de participantes, revisores y fechas los debe completar el equipo con información veraz; este informe solo afirma como hecho lo que consta en el repositorio.</p>
+
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>Herramienta</th><th>Participantes</th><th>Tareas asistidas</th><th>Aportes de la IA</th><th>Validación humana</th></tr>
+  <tr><td>ChatGPT</td><td>[COMPLETAR POR EL EQUIPO]</td><td>[COMPLETAR POR EL EQUIPO: tareas]</td><td>[COMPLETAR POR EL EQUIPO]</td><td>[COMPLETAR POR EL EQUIPO]</td></tr>
+  <tr><td>GitHub Copilot</td><td>[COMPLETAR POR EL EQUIPO]</td><td>[COMPLETAR POR EL EQUIPO: tareas]</td><td>[COMPLETAR POR EL EQUIPO]</td><td>[COMPLETAR POR EL EQUIPO]</td></tr>
+  <tr><td>Claude</td><td>[COMPLETAR POR EL EQUIPO]</td><td>[COMPLETAR POR EL EQUIPO: tareas]</td><td>[COMPLETAR POR EL EQUIPO]</td><td>[COMPLETAR POR EL EQUIPO]</td></tr>
+  <tr><td>Claude Code (modelos declarados en <code>AI_USAGE.md</code>: Claude Fable 5.2 y Claude Sonnet 5.5 como subagente)</td><td>[COMPLETAR POR EL EQUIPO: integrantes que lo usaron y quién lanzó cada tarea]</td>
+    <td>
+      PR #1: análisis de brechas frente a requirements.md y design.md; correcciones de backend, plantilla SAM y frontend.<br>
+      PR #2: README, modelo de amenazas, evidencias, scripts de aceptación y usuarios de prueba, CI y <code>AI_USAGE.md</code>.<br>
+      PR #3: MFA TOTP obligatorio y evidencia de las pruebas de aceptación [COMPLETAR POR EL EQUIPO: confirmar la participación de la IA].<br>
+      PR #4: auditoría de rechazos, esquema Cedar <code>STRICT</code>, política <code>ReadMyDonations</code>, informe técnico y evidencia de T13.<br>
+      PR #5: gestión de borradores, reingreso tras recargar y prueba T03b [COMPLETAR POR EL EQUIPO: confirmar la participación de la IA].
+    </td>
+    <td>Código, plantilla SAM, políticas Cedar, pruebas unitarias (205 en total), documentación y scripts incluidos en los cinco pull requests fusionados (#1 a #5).</td>
+    <td>[COMPLETAR POR EL EQUIPO: quién revisó cada PR (distinto de quien generó el cambio), fecha, comentarios y correcciones]. Pruebas ejecutadas: 205 unitarias y las pruebas de aceptación contra el despliegue (sección 6).</td></tr>
+</table>
+
+<p><b>Limitaciones declaradas.</b> Las pruebas unitarias simulan DynamoDB y Verified Permissions y no detectan una política Cedar demasiado permisiva; solo las pruebas negativas contra el despliegue lo hacen. El informe técnico y el modelo de amenazas del repositorio fueron redactados con asistencia de IA y el equipo debe contrastarlos con el código antes de la sustentación.</p>
+
+<p><b>Defectos detectados por la IA y corregidos.</b> Lectura de <code>cognito:groups</code>, permisos Cedar ausentes, tres políticas en un solo recurso, <code>Mode: OFF</code> interpretado como booleano, <code>TransactionCanceledException</code> sin capturar y tokens en <code>sessionStorage</code> (ver 7.3).</p>
+
+<p><b>Ejemplo de validación humana que detectó una brecha que las pruebas no veían.</b> Durante el uso de la aplicación se reportó que un proyecto en BORRADOR no podía publicarse si el gestor abandonaba la pantalla de creación, porque la API no tenía una consulta de borradores y el detalle de un borrador responde 404 a cualquier usuario. Ni las pruebas unitarias ni las pruebas T01–T14 lo detectaban: la funcionalidad existía pero la interfaz dejaba el borrador inalcanzable. Se corrigió en el PR #5 con <code>GET /v1/projects/drafts</code> (scope <code>api/projects.write</code> y acción Cedar <code>ListDraftProjects</code> solo para GESTOR), la pantalla «Borradores» y la prueba T03b; la publicación desde esa pantalla se comprobó en el despliegue. [COMPLETAR POR EL EQUIPO: quién reportó el caso y si el código original fue generado por IA.]</p>
+
+<p><b>Cumplimiento de las reglas de design.md §10.</b></p>
+<table border="1" cellpadding="4" cellspacing="0">
+  <tr><th>Regla</th><th>Estado</th></tr>
+  <tr><td>Todo cambio de IA entra por PR revisado por un integrante distinto</td><td>Los cinco cambios entraron por pull request (#1 a #5). [COMPLETAR POR EL EQUIPO: revisor de cada uno]</td></tr>
+  <tr><td>No se compartieron credenciales AWS, tokens ni contenidos de <code>.env</code> con los asistentes</td><td>[COMPLETAR POR EL EQUIPO]</td></tr>
+  <tr><td>Los controles de seguridad tienen pruebas escritas o revisadas por el equipo</td><td>Hay pruebas unitarias y pruebas negativas contra el despliegue (sección 6); [COMPLETAR POR EL EQUIPO: revisión]</td></tr>
+  <tr><td>Cada integrante puede explicar el código y las decisiones</td><td>[COMPLETAR POR EL EQUIPO]</td></tr>
+</table>
+
+<h1>Solución del cuestionario</h1>
+
+<h3>1. ¿Dónde está el PEP en tu sistema y qué ocurre si falla?</h3>
+<p>Hay dos puntos de aplicación en serie. El primero es el JWT authorizer de API Gateway, que rechaza sin invocar a Lambda los tokens ausentes, vencidos, alterados, de otro app client o sin el scope de la ruta (observado: 401 sin token y con token alterado; 403 con un ID token). El segundo es el handler de Lambda, que lee identidad y grupos solo de claims verificados, reverifica el scope y convierte cualquier decisión distinta de <code>ALLOW</code> de Verified Permissions en 403. Para el sitio estático, CloudFront es el único camino a S3 (el acceso directo devuelve 403).</p>
+<p>Ante una falla, el sistema cierra el acceso. Si Verified Permissions no responde o falta su configuración, el handler devuelve 500 y no ejecuta la operación: se pierde disponibilidad de las rutas protegidas, no seguridad, y el catálogo público sigue disponible. Si el authorizer faltara en una ruta, el handler rechazaría con 401 al no recibir claims. El riesgo principal es de configuración (una ruta marcada <code>Authorizer: NONE</code>), que hoy corresponde solo a las tres lecturas públicas y se vigila con T02 y T11.</p>
+
+<h3>2. ¿Qué principio de NIST cubre solo parcialmente tu diseño?</h3>
+<p>El principio 5, monitorear la integridad y la postura de los activos. El sistema tiene CloudTrail con su historial por defecto y <code>npm audit</code> en CI, pero no hay verificación de postura de dispositivo, GuardDuty, Security Hub, AWS Config, alarmas ni Dependabot, por no estar disponibles en el plan Free o no haberse configurado. Otros principios tienen matices: el 3 y el 6 son completos en diseño, pero un access token ya emitido no puede revocarse de inmediato (T13) y el TOTP se exige por usuario y no por claim; el 7 recolecta información (logs, <code>AuditEvents</code>, CloudTrail) pero no la analiza automáticamente.</p>
+
+<h3>3. ¿Cómo detectarías una autorización incorrecta generada por IA?</h3>
+<p>No basta con la suite unitaria: sus pruebas simulan Verified Permissions y DynamoDB, así que no detectan una política demasiado permisiva. Detectan mejor las pruebas negativas contra el despliegue (T03, T09, T12 y T03b), la denegación por defecto de Cedar (una omisión se manifiesta como un 403 inesperado y no como un acceso indebido), la doble barrera de propiedad en la simulación (Cedar y la condición <code>donorSub = :sub</code> de la transacción), la validación <code>STRICT</code> del almacén (rechaza nombres erróneos al desplegar), la revisión de cada PR por otra persona y <code>AuditEvents</code>, que conserva también las denegaciones.</p>
+<p>El caso real fue la condición tautológica de <code>ReadMyDonations</code>: comparaba el <code>sub</code> del token con un recurso construido con ese mismo <code>sub</code>, de modo que nunca fallaba y ninguna prueba lo señaló; solo la revisión de la política frente al handler lo expuso. Un permiso excesivo pero válido no lo detecta la validación del esquema y solo lo revelan las pruebas negativas.</p>
+
+<h3>4. ¿Qué cambia si el token robado sigue vigente 15 minutos?</h3>
+<p>Quien posea el token actúa con los permisos del rol de la víctima durante esa ventana: un donante podría crear y simular donaciones propias (sin dinero real), un gestor crear y publicar proyectos y un auditor leer eventos seudonimizados. El MFA no ayuda en ese lapso, porque el token se emite después del segundo factor. T13 lo mostró: tras revocar el refresh token, el access token siguió dando 200 desde las 19:57:04 hasta las 20:03:02 UTC y 401 a las 20:11:50, mientras que el refresh token revocado ya no renueva (<code>invalid_grant</code>).</p>
+<p>El daño queda acotado por la vida corta del token, la limitación de tasa, el aislamiento por propietario (el ladrón de un token de donante no puede gestionar proyectos ni leer donaciones ajenas) y los eventos de auditoría con <code>requestId</code>. Una respuesta más fuerte sería un Lambda authorizer con lista de revocación, que el diseño descarta por su costo en latencia y en un almacén adicional.</p>
+
+<h1>Conclusiones</h1>
+<ul>
+  <li>La plataforma está desplegada en <code>us-east-2</code> (stage <code>academic</code>) y, sobre las 12 historias de usuario, ocho están cumplidas, una cumplida con desviación (HU-03, por el 403 del ID token) y tres parciales (HU-05 por la carrera de idempotencia, HU-10 sin ejecución con un AUDITOR real y HU-11 con T14 pendiente de captura).</li>
+  <li>Los controles Zero Trust se demostraron con pruebas negativas contra el despliegue real: T01–T09, T11 y T12 (más T03b) pasaron en tres ejecuciones con usuarios reales y MFA TOTP, y T13 pasó con una ejecución manual; además hay 205 pruebas unitarias de backend.</li>
+  <li>La autorización está externalizada en Verified Permissions con siete políticas Cedar y esquema <code>STRICT</code>; la revisión humana corrigió defectos que las pruebas no detectaban, como la condición tautológica de <code>ReadMyDonations</code> y los borradores inalcanzables.</li>
+  <li>El sistema declara sus límites: un access token revocado se acepta hasta unos 15 minutos (T13), no hay postura de dispositivo, WAF ni evaluación continua de riesgo, y el principio 5 de NIST se cubre solo en parte.</li>
+  <li>Siguen pendientes y no deben presentarse como hechos: la captura de T14, la demostración dinámica de T10, la medición de rendimiento y accesibilidad, las capturas de CloudWatch, la alerta de AWS Budgets, la limpieza de recursos y los campos de revisión humana de la declaración de IA.</li>
+  <li>El MFA TOTP es obligatorio para todos los usuarios, más estricto que lo exigido, y las desviaciones de región, de código 403 y de scopes están documentadas con su causa.</li>
+</ul>
+
+<h1>Referencias y bibliografía</h1>
+<ul>
+  <li>NIST SP 800-207, Zero Trust Architecture: https://csrc.nist.gov/pubs/sp/800/207/final</li>
+  <li>NIST SP 800-207A, ZTA para aplicaciones cloud-native: https://csrc.nist.gov/pubs/sp/800/207/a/final</li>
+  <li>CISA, Zero Trust Maturity Model v2.0: https://www.cisa.gov/resources-tools/resources/zero-trust-maturity-model</li>
+  <li>OWASP API Security Top 10: https://owasp.org/API-Security/</li>
+  <li>AWS, API Gateway JWT authorizers: https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-jwt-authorizer.html</li>
+  <li>AWS, Cognito, revocación de tokens: https://docs.aws.amazon.com/cognito/latest/developerguide/token-revocation.html</li>
+  <li>AWS, Cognito, MFA con TOTP: https://docs.aws.amazon.com/cognito/latest/developerguide/user-pool-settings-mfa-totp.html</li>
+  <li>AWS, Amazon Verified Permissions: https://docs.aws.amazon.com/verifiedpermissions/</li>
+  <li>AWS, servicios incluidos en el Free plan: https://docs.aws.amazon.com/accounts/latest/reference/supported-services-sign-up-new.html</li>
+  <li>Guía del curso: requirements.md y design.md, versión 2.0 (Tópicos Avanzados en Ingeniería de Software, EPIS, UNSA)</li>
+  <li>Repositorio del proyecto: https://github.com/joeCuadros/secure-donations-2026</li>
+</ul>
+
+<div class="nota">
+<h2 style="margin-top:0">NOTA SUGERIDA PARA LA PRIMERA PESTAÑA (planificación de la Fase 1; no es parte de este informe)</h2>
+<p>«Esta planificación quedó superada por requirements.md y design.md v2.0 del docente, que fijan el alcance y la arquitectura finales. Se diferencia en que propone Vercel y WAF, mientras el diseño final usa AWS (CloudFront con S3 privado, API Gateway HTTP API, Lambda, Cognito, DynamoDB y Verified Permissions) sin WAF por limitación de HTTP API, y en que parte de un sistema sin roles y con campañas editables, mientras la versión final define los roles DONANTE, GESTOR y AUDITOR con MFA TOTP y proyectos que el gestor crea y publica (sin edición) para recibir donaciones simuladas.»</p>
+</div>
+
+</body>
+</html>

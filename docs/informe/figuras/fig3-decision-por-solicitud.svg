@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1110" viewBox="0 0 1000 1110" role="img" aria-labelledby="t3 d3">
+  <title id="t3">Decisión de acceso por solicitud</title>
+  <desc id="d3">Diagrama de flujo de una solicitud protegida: comprobaciones en API Gateway y en Lambda, código HTTP de cada rechazo y dónde queda registrado.</desc>
+  <defs>
+    <style>
+      text { font-family: "Segoe UI", Arial, sans-serif; }
+      .dq { font-size: 17px; text-anchor: middle; fill: #111827; font-weight: 600; }
+      .rt { font-size: 18px; font-weight: 700; fill: #111827; }
+      .rd { font-size: 16px; fill: #1f2937; }
+      .ra { font-size: 16px; font-weight: 700; fill: #1e2a4a; }
+      .rg { font-size: 16px; font-weight: 600; fill: #4b5563; }
+      .lbl { font-size: 16px; font-weight: 600; fill: #1f2937; paint-order: stroke; stroke: #ffffff; stroke-width: 5px; stroke-linejoin: round; }
+      .ln { fill: none; stroke: #1f2937; stroke-width: 2.2; }
+      .band { font-size: 16px; font-weight: 700; }
+      .note { font-size: 16px; fill: #1f2937; }
+    </style>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1f2937"/>
+    </marker>
+  </defs>
+  <rect width="1000" height="1110" fill="#ffffff"/>
+
+  <!-- Bandas por componente -->
+  <rect x="10" y="70" width="980" height="222" rx="8" fill="#fdf0e6" stroke="#c2410c" stroke-width="1.6" stroke-dasharray="8 5"/>
+  <text class="band" x="978" y="91" text-anchor="end" fill="#9a3412">API Gateway · JWT authorizer (PEP 1)</text>
+  <rect x="10" y="306" width="980" height="646" rx="8" fill="#eef1f8" stroke="#1e2a4a" stroke-width="1.6" stroke-dasharray="8 5"/>
+  <text class="band" x="978" y="327" text-anchor="end" fill="#1e2a4a">AWS Lambda · handler (PEP 2) y Verified Permissions (PE)</text>
+
+  <!-- Flechas del flujo principal -->
+  <path class="ln" d="M300,56 V106" marker-end="url(#a)"/>
+  <path class="ln" d="M300,168 V212" marker-end="url(#a)"/>
+  <path class="ln" d="M300,274 V344" marker-end="url(#a)"/>
+  <path class="ln" d="M300,406 V450" marker-end="url(#a)"/>
+  <path class="ln" d="M300,512 V556" marker-end="url(#a)"/>
+  <path class="ln" d="M300,618 V662" marker-end="url(#a)"/>
+  <path class="ln" d="M300,724 V768" marker-end="url(#a)"/>
+  <path class="ln" d="M300,830 V874" marker-end="url(#a)"/>
+
+  <!-- Flechas "No" -->
+  <path class="ln" d="M500,137 H585" marker-end="url(#a)"/>
+  <path class="ln" d="M500,243 H585" marker-end="url(#a)"/>
+  <path class="ln" d="M500,375 H585" marker-end="url(#a)"/>
+  <path class="ln" d="M500,481 H585" marker-end="url(#a)"/>
+  <path class="ln" d="M500,587 H585" marker-end="url(#a)"/>
+  <path class="ln" d="M500,693 H585" marker-end="url(#a)"/>
+  <path class="ln" d="M500,799 H585" marker-end="url(#a)"/>
+
+  <!-- Etiquetas Sí / No -->
+  <text class="lbl" x="310" y="196">Sí</text>
+  <text class="lbl" x="310" y="332">Sí</text>
+  <text class="lbl" x="310" y="436">Sí</text>
+  <text class="lbl" x="310" y="540">Sí</text>
+  <text class="lbl" x="310" y="648">Sí</text>
+  <text class="lbl" x="310" y="754">Sí</text>
+  <text class="lbl" x="310" y="860">Sí</text>
+  <text class="lbl" x="543" y="129" text-anchor="middle">No</text>
+  <text class="lbl" x="543" y="235" text-anchor="middle">No</text>
+  <text class="lbl" x="543" y="367" text-anchor="middle">No</text>
+  <text class="lbl" x="543" y="473" text-anchor="middle">No</text>
+  <text class="lbl" x="543" y="579" text-anchor="middle">No</text>
+  <text class="lbl" x="543" y="685" text-anchor="middle">No</text>
+  <text class="lbl" x="543" y="791" text-anchor="middle">No</text>
+
+  <!-- Inicio -->
+  <rect x="120" y="12" width="360" height="44" rx="22" fill="#44525e"/>
+  <text x="300" y="40" font-size="17" font-weight="700" text-anchor="middle" fill="#ffffff">Solicitud HTTPS a una ruta protegida</text>
+
+  <!-- Decisiones -->
+  <rect x="100" y="106" width="400" height="62" rx="10" fill="#ffffff" stroke="#c2410c" stroke-width="2.4"/>
+  <text class="dq" x="300" y="133">¿Token presente, con firma, emisor,</text>
+  <text class="dq" x="300" y="153">vigencia y client_id válidos?</text>
+
+  <rect x="100" y="212" width="400" height="62" rx="10" fill="#ffffff" stroke="#c2410c" stroke-width="2.4"/>
+  <text class="dq" x="300" y="239">¿El token incluye el scope</text>
+  <text class="dq" x="300" y="259">que exige la ruta?</text>
+
+  <rect x="100" y="344" width="400" height="62" rx="10" fill="#ffffff" stroke="#1e2a4a" stroke-width="2.4"/>
+  <text class="dq" x="300" y="371">¿Claims verificados y scope</text>
+  <text class="dq" x="300" y="391">correctos en Lambda?</text>
+
+  <rect x="100" y="450" width="400" height="62" rx="10" fill="#ffffff" stroke="#1e2a4a" stroke-width="2.4"/>
+  <text class="dq" x="300" y="477">¿Cuerpo, cabeceras y parámetros</text>
+  <text class="dq" x="300" y="497">válidos (Zod)?</text>
+
+  <rect x="100" y="556" width="400" height="62" rx="10" fill="#ffffff" stroke="#1e2a4a" stroke-width="2.4"/>
+  <text class="dq" x="300" y="583">¿Verified Permissions permite la</text>
+  <text class="dq" x="300" y="603">acción (grupo y propietario)?</text>
+
+  <rect x="100" y="662" width="400" height="62" rx="10" fill="#ffffff" stroke="#1e2a4a" stroke-width="2.4"/>
+  <text class="dq" x="300" y="699">¿El recurso existe?</text>
+
+  <rect x="100" y="768" width="400" height="62" rx="10" fill="#ffffff" stroke="#1e2a4a" stroke-width="2.4"/>
+  <text class="dq" x="300" y="805">¿Se cumplen las reglas de negocio?</text>
+
+  <!-- Resultado correcto -->
+  <rect x="100" y="874" width="400" height="64" rx="10" fill="#dcfce7" stroke="#166534" stroke-width="2.4"/>
+  <text x="300" y="900" font-size="18" font-weight="700" text-anchor="middle" fill="#14532d">2xx · operación realizada</text>
+  <text x="300" y="922" font-size="16" text-anchor="middle" fill="#14532d">SUCCESS en AuditEvents (solo escrituras)</text>
+
+  <!-- Rechazos en API Gateway -->
+  <rect x="585" y="101" width="400" height="72" rx="8" fill="#f3f4f6" stroke="#9ca3af" stroke-width="1.6"/>
+  <rect x="585" y="101" width="7" height="72" rx="3" fill="#b91c1c"/>
+  <text class="rt" x="604" y="122">401 Unauthorized</text>
+  <text class="rd" x="604" y="142">sin token, firma inválida o expirado</text>
+  <text class="rg" x="604" y="162">○ solo en el log de acceso del stage</text>
+
+  <rect x="585" y="207" width="400" height="72" rx="8" fill="#f3f4f6" stroke="#9ca3af" stroke-width="1.6"/>
+  <rect x="585" y="207" width="7" height="72" rx="3" fill="#b91c1c"/>
+  <text class="rt" x="604" y="228">403 Forbidden</text>
+  <text class="rd" x="604" y="248">falta el scope de la ruta (p. ej. ID token)</text>
+  <text class="rg" x="604" y="268">○ solo en el log de acceso del stage</text>
+
+  <!-- Rechazos en Lambda -->
+  <rect x="585" y="339" width="400" height="72" rx="8" fill="#e3e9f6" stroke="#1e2a4a" stroke-width="1.6"/>
+  <rect x="585" y="339" width="7" height="72" rx="3" fill="#b91c1c"/>
+  <text class="rt" x="604" y="360">403 Forbidden</text>
+  <text class="rd" x="604" y="380">falta el scope en la comprobación de Lambda</text>
+  <text class="ra" x="604" y="400">● AuditEvents · DENIED</text>
+
+  <rect x="585" y="445" width="400" height="72" rx="8" fill="#e3e9f6" stroke="#1e2a4a" stroke-width="1.6"/>
+  <rect x="585" y="445" width="7" height="72" rx="3" fill="#b91c1c"/>
+  <text class="rt" x="604" y="466">400 Bad Request</text>
+  <text class="rd" x="604" y="486">entrada que no cumple el esquema</text>
+  <text class="ra" x="604" y="506">● AuditEvents · FAILURE</text>
+
+  <rect x="585" y="551" width="400" height="72" rx="8" fill="#e3e9f6" stroke="#1e2a4a" stroke-width="1.6"/>
+  <rect x="585" y="551" width="7" height="72" rx="3" fill="#b91c1c"/>
+  <text class="rt" x="604" y="572">403 Forbidden</text>
+  <text class="rd" x="604" y="592">decisión DENY (grupo o propietario)</text>
+  <text class="ra" x="604" y="612">● AuditEvents · DENIED</text>
+
+  <rect x="585" y="657" width="400" height="72" rx="8" fill="#e3e9f6" stroke="#1e2a4a" stroke-width="1.6"/>
+  <rect x="585" y="657" width="7" height="72" rx="3" fill="#b91c1c"/>
+  <text class="rt" x="604" y="678">404 Not Found</text>
+  <text class="rd" x="604" y="698">proyecto o donación inexistente</text>
+  <text class="ra" x="604" y="718">● AuditEvents · FAILURE</text>
+
+  <rect x="585" y="763" width="400" height="72" rx="8" fill="#e3e9f6" stroke="#1e2a4a" stroke-width="1.6"/>
+  <rect x="585" y="763" width="7" height="72" rx="3" fill="#b91c1c"/>
+  <text class="rt" x="604" y="784">409 Conflict</text>
+  <text class="rd" x="604" y="804">idempotencia, transición inválida o borrador</text>
+  <text class="ra" x="604" y="824">● AuditEvents · FAILURE</text>
+
+  <!-- Notas -->
+  <rect x="10" y="966" width="980" height="134" rx="8" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text class="note" x="24" y="992"><tspan font-weight="700" fill="#1e2a4a">●</tspan> Rechazo registrado en AuditEvents (DENIED, FAILURE o ERROR): ocurre tras autenticar, dentro de Lambda.</text>
+  <text class="note" x="24" y="1014"><tspan font-weight="700" fill="#4b5563">○</tspan> Rechazo que solo aparece en el log de acceso de API Gateway: Lambda no llega a invocarse.</text>
+  <text class="note" x="24" y="1040">El orden entre 400, 403 de Verified Permissions, 404 y 409 depende de la operación: al crear una donación,</text>
+  <text class="note" x="24" y="1060">404 y 409 se evalúan antes que Cedar; al simular, la donación se lee antes de la decisión.</text>
+  <text class="note" x="24" y="1086">Un error no previsto responde 500 (ERROR en AuditEvents); el 429 por límite de tasa solo queda en el log de acceso.</text>
+</svg>
