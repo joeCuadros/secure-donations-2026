@@ -13,7 +13,7 @@ demostrarlo con pruebas negativas.
 Documentos de referencia: [requirements.md](requirements.md) (requerimientos y pruebas T01–T14),
 [design.md](design.md) (diseño), [docs/threat-model.md](docs/threat-model.md) (modelo de amenazas y mapeo NIST),
 [docs/api.yaml](docs/api.yaml) (OpenAPI 3.1), [evidence/](evidence/README.md) (evidencias) y
-[AI_USAGE.md](AI_USAGE.md) (declaración de uso de IA).
+[AI_USAGE.md](AI_USAGE.md) (declaración de uso de IA) e [informe técnico](docs/informe-tecnico.md).
 
 ## Arquitectura
 
@@ -42,7 +42,7 @@ flowchart TD
 | Identidad | Cognito User Pool, dominio alojado, grupos, scopes `api/*`, app client público (sin secreto, solo flujo `code`); la SPA usa PKCE | `infra/template.yaml` |
 | API | API Gateway HTTP API con JWT authorizer por defecto, scopes por ruta, CORS restringido y limitación de tasa | `infra/template.yaml` |
 | Lógica | 9 funciones Lambda (TypeScript, Node.js 24, empaquetadas con esbuild) | `backend/src/` |
-| Autorización | Verified Permissions: una política Cedar por regla; Lambda construye el contexto desde claims verificados | `policies/`, `backend/src/authz/` |
+| Autorización | Verified Permissions con validación `STRICT` y esquema embebido: una política Cedar por regla; Lambda construye el contexto desde claims verificados | `policies/`, `backend/src/authz/` |
 | Datos | 4 tablas DynamoDB bajo demanda; idempotencia y transiciones con `TransactWriteItems` condicionado | `backend/src/donations/` |
 
 La ruta `POST /v1/donations/{donationId}/simulate` y su función solo existen en el stage `academic`
@@ -169,7 +169,7 @@ la prueba T14. El modo `--enforce-mfa` del script ya no es necesario.
 **Locales (no usan AWS):**
 
 ```bash
-cd backend && npm ci && npm run typecheck && npm test      # 143 pruebas Vitest
+cd backend && npm ci && npm run typecheck && npm test      # 184 pruebas Vitest
 cd frontend && npm ci && npm run lint && npm run build
 ```
 
@@ -253,7 +253,13 @@ no debe presentarse como superada.
 - HTTP API no se integra con AWS WAF; no hay WAF delante de CloudFront.
 - El MFA se exige en Cognito para todos los usuarios (`MfaConfiguration: "ON"`); el access token no incluye el claim
   `amr`, por lo que la política Cedar de auditoría no comprueba MFA.
-- La política de Verified Permissions se ejecuta con la validación de esquema desactivada (`Mode: "OFF"`).
+- El almacén de Verified Permissions valida las políticas con `Mode: "STRICT"` contra un esquema embebido en la
+  plantilla (`policies/schema.cedarschema` es su forma legible). La política `ReadMyDonations` solo exige el grupo
+  `DONANTE`: la propiedad del historial se garantiza porque la consulta usa el `sub` del token como clave y no acepta
+  identificadores del cliente.
+- `AuditEvents` registra las escrituras exitosas y los rechazos posteriores a la autenticación (`DENIED`, `FAILURE`,
+  `ERROR`) de los seis handlers protegidos; no registra consultas exitosas ni las solicitudes que API Gateway rechaza
+  antes de invocar a Lambda.
 - Los permisos de logs de Lambda vienen del rol administrado `AWSLambdaBasicExecutionRole`.
 
 El detalle, los controles asociados y las respuestas a las preguntas de discusión están en

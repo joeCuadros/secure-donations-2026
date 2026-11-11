@@ -14,6 +14,11 @@ confirmados en `infra/template.yaml`, `policies/`, `backend/src/` y `frontend/sr
 - **Pendiente**: requiere usuarios autenticados y aún no se ha ejecutado (T03–T09, T12–T14 y la mitad de T11 con
   ID token). **Un control pendiente no está demostrado.**
 
+> Los estados «Pendiente» de T03–T09, T11 y T12 de este documento son anteriores a la ejecución con usuarios reales
+> del 2026-11-11; el resultado vigente de esas pruebas está en
+> [evidence/2026-11-11-acceptance.md](../evidence/2026-11-11-acceptance.md). T13 se ejecutó completa y pasó (token revocado
+> aceptado hasta expirar y rechazado con 401 después), T14 sigue pendiente y T10 solo tiene evidencia estática.
+
 ## 1. Modelo del sistema
 
 Actores: visitante (anónimo), donante, gestor y auditor (grupos de Cognito `DONANTE`, `GESTOR`, `AUDITOR`).
@@ -95,14 +100,18 @@ compartida.
 | E | Elevación vertical (donante gestiona proyectos) | Una política `permit` por regla; denegación por defecto: `CreateProject`/`PublishProject` solo `GESTOR`, `CreateDonation` y `SimulateDonation` solo `DONANTE`, `ReadAuditLogs` solo `AUDITOR` | `policies/*.cedar`; `CreateProjectPolicy`, `PublishProjectPolicy`, `CreateDonationPolicy`, `SimulateDonationPolicy`, `ReadMyDonationsPolicy`, `CoreAuthorizationPolicy` | **Pendiente** (T03, T12) |
 | E | Acceso horizontal (BOLA) a donaciones ajenas | `SimulateDonation` exige `principal.sub == resource.donorSub`; además la transacción de DynamoDB condiciona `donorSub = :sub` (segunda barrera independiente de Cedar) | `SimulateDonationPolicy`; `simulate-donation.service.ts` | **Pendiente** (T09). La condición de DynamoDB no tiene aserción en las pruebas unitarias |
 | E | Donar a un proyecto no publicado | `CreateDonation` exige `resource.status == "PUBLICADO"`, y el servicio devuelve 409 antes de consultar | `CreateDonationPolicy`; `create-donation.service.ts` | Unitaria (409); Cedar **pendiente** |
-| R | Decisiones sin registro | Una denegación queda en el log de acceso (403 con `errorCode`), pero no hay registro de decisiones del motor | `access-log.ts` | Limitación declarada |
+| R | Decisiones sin registro | Una denegación queda en el log de acceso (403 con `errorCode`) y se persiste en `AuditEvents` con resultado `DENIED` (actor seudonimizado, acción, recurso y `requestId`). No se guarda el detalle de la decisión del motor ni la política que la produjo | `access-log.ts`, `audit/audited-handler.ts` | Unitaria; el detalle del motor es una limitación declarada |
 | D/I | Indisponibilidad o error del motor | Falla cerrada: cualquier error de AVP o falta de configuración produce 500 genérico; el detalle va solo al log del servidor. Las rutas públicas no dependen de AVP | `avp.service.ts` | Unitaria |
-| T | Políticas inválidas pasan sin detectarse | El almacén se crea con `ValidationSettings.Mode: "OFF"`, de modo que Cedar no valida nombres de entidades ni atributos contra el esquema | `PolicyStore` | Limitación declarada. Las pruebas T03/T09/T12 detectan el efecto |
+| T | Políticas inválidas pasan sin detectarse | El almacén valida con `ValidationSettings.Mode: "STRICT"` contra un esquema embebido (`Schema.CedarJson`, forma JSON de `policies/schema.cedarschema`): un nombre de entidad, acción o atributo erróneo en una política falla el despliegue. El esquema declara un tipo de recurso por acción; las acciones sin entidad propia usan el singleton `Application`. La coherencia entre plantilla, `policies/` y el código se comprueba en `backend/tests/authz/cedar-schema.test.ts` | `PolicyStore`; `policies/schema.cedarschema` | Plantilla y prueba unitaria; **pendiente** confirmar en el despliegue que el conjunto de cambios acepta el esquema |
 
-Observaciones: la política `ReadMyDonations` compara `principal.sub` con un `donorSub` que el propio handler rellena con
-el `sub` del token, por lo que su efecto práctico es exigir el grupo `DONANTE`; el aislamiento del historial lo da la
-consulta por `donorSub = sub` en el índice. Las reglas de `policies/*.cedar` y de `template.yaml` se mantienen a mano en
-dos lugares (riesgo de divergencia; no hay verificación automática).
+Observaciones: la política `ReadMyDonations` solo exige el grupo `DONANTE`; no declara una condición de propiedad,
+porque comparar `principal.sub` con un `donorSub` rellenado por el propio handler sería una tautología. El aislamiento
+del historial es estructural: la consulta usa el `sub` verificado del token como clave de partición del índice
+`donorSub-createdAt` y no acepta ningún identificador del cliente (prueba unitaria en
+`backend/tests/donations/donations.test.ts`). `SimulateDonation` sí conserva su condición
+`principal.sub == resource.donorSub`, porque el recurso se lee de DynamoDB. Las reglas de `policies/*.cedar` y de
+`template.yaml` se mantienen a mano en dos lugares; una prueba unitaria compara las seis sentencias, pero no sustituye
+la validación STRICT del almacén ni `cedar validate`.
 
 ### Frontera 6: Lambda → DynamoDB
 
@@ -111,7 +120,7 @@ dos lugares (riesgo de divergencia; no hay verificación automática).
 | E | Una función comprometida lee o escribe más de lo necesario | Un rol por función con acciones y recursos exactos (tabla siguiente); sin `Action: "*"` ni `Resource: "*"` en las políticas propias | Bloques `Policies` de cada `AWS::Serverless::Function` | Despliegue para `ListProjects` (T10, evidencia estática de IAM); Plantilla para el resto |
 | T | Doble conteo, transiciones inválidas, repetición de solicitudes | `TransactWriteItems` con condiciones: reserva de clave (`attribute_not_exists(pk)`) y donación en una sola transacción; transición `status = PENDIENTE_SIMULACION AND donorSub = :sub` con incremento del acumulado en la misma transacción; publicación condicionada a `BORRADOR`; importes en céntimos enteros; `ConsistentRead` en lecturas por clave | `create-donation.service.ts`, `simulate-donation.service.ts`, `publish-project.service.ts` | Unitaria (simulada); **pendiente** en vivo (T06–T08) |
 | T | Reutilizar una clave de idempotencia con otro cuerpo o de otro usuario | `payloadHash` SHA-256 y clave `sub#createDonation#idempotencyKey`; TTL de 24 h | `create-donation.service.ts`; `IdempotencyTable` | Unitaria; **pendiente** (T06, T07) |
-| R | Repudio o manipulación del rastro | Las funciones que escriben auditoría solo tienen `PutItem` sobre `AuditEvents` (sin actualizar ni borrar); actor seudonimizado con SHA-256 truncado; sin tokens ni datos financieros. **Solo se registran eventos `SUCCESS`**: las denegaciones y errores quedan en CloudWatch, y un fallo al escribir la auditoría no bloquea la operación | `create-audit.service.ts`; handlers | Unitaria; limitación declarada |
+| R | Repudio o manipulación del rastro | Las funciones que escriben auditoría solo tienen `PutItem` sobre `AuditEvents` (sin actualizar ni borrar); actor seudonimizado con SHA-256 truncado; sin tokens ni datos financieros. Los seis handlers protegidos persisten un evento por solicitud: `SUCCESS` en las escrituras exitosas y, tras autenticar, `DENIED` (401/403), `FAILURE` (400, 404, 409) o `ERROR` (5xx) en los rechazos; sin identidad verificada el actor es `actor_unknown`. Las consultas exitosas (historial y auditoría) no se registran. Un fallo al escribir la auditoría se registra en el log y no cambia la respuesta | `create-audit.service.ts`, `audit/audited-handler.ts`; handlers | Unitaria; la escritura real en `AuditEvents` está **pendiente** de verificar en el despliegue |
 | I | Divulgación de datos de donantes en vistas públicas | El catálogo y las estadísticas no incluyen donantes; el historial se consulta por `donorSub` y no devuelve ese campo. **Defecto observado en el código**: el detalle público del proyecto (`GET /v1/projects/{id}`) devuelve también `createdBy` (el `sub` del gestor) | `list-projects.service.ts`, `list-donations.service.ts`, `get-project.service.ts` | Unitaria / código; defecto reportado |
 | I | Datos en reposo | Cifrado por defecto de DynamoDB con clave propiedad de AWS; no hay PITR ni copias de respaldo (laboratorio desechable) | `Properties` de las tablas | Plantilla |
 | D | Saturación o costos | Capacidad bajo demanda; limitación en API Gateway; TTL para registros de idempotencia | Tablas | Plantilla |
@@ -126,8 +135,8 @@ Permisos DynamoDB por función (extraídos de `infra/template.yaml`):
 | `PublishProjectFunction` | `GetItem`, `UpdateItem` en `Projects`; `PutItem` en `AuditEvents` | Sí |
 | `CreateDonationFunction` | `GetItem` en `Idempotency` y `Projects`; `PutItem` en `Idempotency`, `Donations` y `AuditEvents` | Sí |
 | `SimulateDonationFunction` (solo stage `academic`) | `GetItem`, `UpdateItem` en `Donations`; `UpdateItem` en `Projects`; `PutItem` en `AuditEvents` | Sí |
-| `ListMyDonationsFunction` | `Query` en el índice `Donations/index/donorSub-createdAt` | Sí |
-| `ListAuditLogsFunction` | `Query` en `AuditEvents` y en `AuditEvents/index/AllAuditLogsIndex` | Sí |
+| `ListMyDonationsFunction` | `Query` en el índice `Donations/index/donorSub-createdAt`; `PutItem` en `AuditEvents` (eventos de consultas rechazadas) | Sí |
+| `ListAuditLogsFunction` | `Query` en `AuditEvents` y en `AuditEvents/index/AllAuditLogsIndex`; `PutItem` en `AuditEvents` (eventos de consultas rechazadas) | Sí |
 
 Además, todas las funciones reciben el rol administrado `AWSLambdaBasicExecutionRole` para escribir logs. Esa política
 administrada no está acotada a los grupos de logs de la pila.
@@ -153,7 +162,7 @@ administrada no está acotada a los grupos de logs de la pila.
 | 4 | Política dinámica | Decisión por solicitud con identidad, grupo, estado del recurso y stage (la simulación no existe fuera de `academic`) | T03, T12 | Total respecto del diseño; sin atributos de dispositivo ni de riesgo. Pendiente en vivo |
 | 5 | Monitorear la integridad y la postura de los activos | CloudTrail (historial por defecto) y `npm audit --audit-level=high` en CI | CI en verde | **Parcial**: sin postura de dispositivo, sin GuardDuty/Security Hub/Config, sin alarmas ni Dependabot configurados |
 | 6 | Autenticación y autorización dinámicas y estrictas antes del acceso | JWT authorizer + Verified Permissions + TOTP en roles privilegiados | T02, T11 (mitad con token alterado), T14 | Total en diseño. El TOTP se aplica por usuario y no por claim; T14 y la mitad ID token de T11 pendientes |
-| 7 | Recolectar información para mejorar la postura | Logs JSON con `requestId`, eventos de auditoría y CloudTrail | CA-NF07.2 (evidencia en CloudWatch pendiente de capturar) | Total en recolección; no hay análisis ni alertas automáticas |
+| 7 | Recolectar información para mejorar la postura | Logs JSON con `requestId`, eventos de auditoría de operaciones exitosas y rechazadas (`SUCCESS`, `DENIED`, `FAILURE`, `ERROR`) y CloudTrail | CA-NF07.2 (evidencia en CloudWatch pendiente de capturar) | Total en recolección; no hay análisis ni alertas automáticas |
 
 ## 4. Fuera de alcance declarado
 
@@ -173,10 +182,14 @@ administrada no está acotada a los grupos de logs de la pila.
    auditoría no comprueba MFA. El control está en el pool (`MfaConfiguration: "ON"`), que exige TOTP a todos los
    usuarios; es más estricto que la matriz de requerimientos, donde el MFA del DONANTE es opcional.
 5. **Tokens en memoria.** Recargar la página obliga a iniciar sesión de nuevo (decisión por CA-NF11.1).
-6. **Almacén de políticas con validación desactivada** (`Mode: "OFF"`); las políticas Cedar están duplicadas entre
-   `policies/` y `template.yaml`.
+6. **Políticas y esquema Cedar duplicados** entre `policies/` y `template.yaml` (el esquema, en su forma legible y
+   en la JSON embebida). El almacén valida con `STRICT`, pero la coherencia entre las copias solo la comprueba una
+   prueba unitaria; no se ejecutó `cedar validate` ni se confirmó el esquema en un conjunto de cambios.
 7. **Permisos de logs.** Se usa el rol administrado `AWSLambdaBasicExecutionRole`.
-8. **Auditoría.** `AuditEvents` registra solo éxitos; los fallos de escritura de auditoría no bloquean la operación.
+8. **Auditoría.** `AuditEvents` registra los rechazos posteriores a la autenticación, pero no las consultas exitosas ni
+   las solicitudes que API Gateway rechaza antes de invocar a Lambda (401 del authorizer, 429 por limitación), que solo
+   quedan en el log de acceso del stage. Los fallos de escritura de auditoría no bloquean la operación y solo se
+   registran en el log; un 5xx por indisponibilidad de DynamoDB probablemente tampoco deje evento.
 9. **Sin registros de acceso** de CloudFront ni S3, sin alarmas de CloudWatch y sin copias de respaldo de DynamoDB.
 10. **Autorregistro y PKCE.** La plantilla no restringe el registro de usuarios ni puede imponer PKCE en el app client
     (el cliente lo aplica).
@@ -216,8 +229,10 @@ que un error por omisión (una política que falta) se manifieste como un 403 in
 (c) la doble barrera de propiedad (Cedar y `donorSub = :sub` en la transacción), de modo que un error en una sola capa
 no basta para romper el aislamiento; (d) revisión humana en el PR por alguien distinto de quien generó el cambio, con
 las políticas de `policies/` y de `template.yaml` comparadas entre sí; (e) los logs de acceso y `AuditEvents`, que
-permiten detectar a posteriori accesos que no deberían haberse concedido. Con la validación del almacén en `OFF`, un
-error de nombre de entidad o de atributo no se rechaza al desplegar: solo lo revelan las pruebas.
+permiten detectar a posteriori accesos que no deberían haberse concedido, y las denegaciones y los rechazos también
+quedan en `AuditEvents`. Con la validación `STRICT` del almacén, un error de nombre de entidad, acción o atributo en una
+política se rechaza al desplegar; un permiso demasiado amplio pero válido no se detecta así y solo lo revelan las
+pruebas negativas.
 
 **4. ¿Qué cambia si un token robado sigue válido 15 minutos?**
 Quien lo posea puede actuar como la víctima durante esa ventana con los permisos de su rol: un donante podría crear y

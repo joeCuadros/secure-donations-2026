@@ -66,7 +66,9 @@ paths:
     post:
       tags: [Proyectos]
       summary: Crear un proyecto de donación (estado BORRADOR)
-      description: Solo el grupo GESTOR. Registra un evento de auditoría `CREATE_PROJECT`.
+      description: |
+        Solo el grupo GESTOR. Registra un evento de auditoría `CREATE_PROJECT` con el resultado de la
+        solicitud (`SUCCESS`, o `DENIED`, `FAILURE` o `ERROR` si se rechaza después de autenticar).
       operationId: createProject
       security:
         - CognitoBearer: [api/projects.write]
@@ -149,7 +151,7 @@ paths:
       description: |
         Solo el grupo GESTOR. La actualización está condicionada a `status = BORRADOR`; publicar un proyecto
         ya publicado, o publicarlo de forma concurrente, devuelve 409. Registra un evento de auditoría
-        `PUBLISH_PROJECT`.
+        `PUBLISH_PROJECT` con el resultado de la solicitud, incluidos los rechazos.
       operationId: publishProject
       security:
         - CognitoBearer: [api/projects.write]
@@ -316,7 +318,8 @@ paths:
         Solo el grupo AUDITOR. Sin `eventType` se consulta el índice global `AllAuditLogsIndex`; con
         `eventType` se consulta la tabla por su clave de partición. El segundo factor (TOTP) de AUDITOR se
         exige en Cognito, no mediante un claim del token. Los eventos no contienen tokens, claves ni datos
-        financieros, y el actor está seudonimizado.
+        financieros, y el actor está seudonimizado. Las consultas exitosas no generan eventos; las rechazadas
+        después de autenticar (403, 400, 5xx) quedan registradas como `LIST_AUDIT_LOGS` de tipo `AUDIT_EVENT`.
       operationId: listAuditLogs
       security:
         - CognitoBearer: [api/audit.read]
@@ -324,12 +327,12 @@ paths:
         - name: eventType
           in: query
           required: false
-          description: Tipo de evento. Los handlers actuales emiten `PROJECT_EVENT` y `DONATION_EVENT`.
+          description: Tipo de evento. Los handlers actuales emiten `PROJECT_EVENT`, `DONATION_EVENT` y `AUDIT_EVENT` (consultas de auditoría rechazadas).
           schema:
             type: string
             minLength: 1
             maxLength: 64
-            examples: [PROJECT_EVENT, DONATION_EVENT]
+            examples: [PROJECT_EVENT, DONATION_EVENT, AUDIT_EVENT]
         - name: from
           in: query
           required: false
@@ -762,18 +765,27 @@ components:
           type: string
         actorRef:
           type: string
-          description: Seudónimo del actor (`actor_` más 8 caracteres de un hash SHA-256 del `sub`).
+          description: |
+            Seudónimo del actor (`actor_` más 8 caracteres de un hash SHA-256 del `sub`), o la constante
+            `actor_unknown` cuando la solicitud no trae una identidad verificada.
           examples: [actor_a1b2c3d4]
         action:
           type: string
-          description: Acciones emitidas actualmente por los handlers.
-          examples: [CREATE_PROJECT, PUBLISH_PROJECT, CREATE_DONATION_INTENT, SIMULATE_DONATION]
+          description: Acciones emitidas actualmente por los handlers protegidos.
+          examples: [CREATE_PROJECT, PUBLISH_PROJECT, CREATE_DONATION_INTENT, SIMULATE_DONATION, LIST_MY_DONATIONS, LIST_AUDIT_LOGS]
         resourceRef:
           type: string
+          description: |
+            Identificador del recurso afectado (proyecto o donación). Es `n/a` si la operación rechazada no tiene
+            recurso identificable, e `invalid` si el identificador del path no tiene la forma esperada.
           examples: [don_91a82c3d4e5f]
         outcome:
           type: string
-          enum: [SUCCESS, FAILURE]
+          enum: [SUCCESS, FAILURE, DENIED, ERROR]
+          description: |
+            `SUCCESS`: operación completada. `DENIED`: autorización o identidad rechazada (401/403).
+            `FAILURE`: rechazo de validación o de negocio (400, 404, 409). `ERROR`: fallo inesperado (5xx).
+            Un fallo al escribir el evento nunca cambia la respuesta HTTP.
 
     AuditListResponse:
       type: object
