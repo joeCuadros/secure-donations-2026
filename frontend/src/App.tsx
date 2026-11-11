@@ -1,10 +1,12 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthProvider";
+import { SessionResume } from "./auth/SessionResume";
 import { Layout } from "./components/Layout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AuditLogs } from "./pages/AuditLogs";
 import { AuthCallback } from "./pages/AuthCallback";
 import { CreateProject } from "./pages/CreateProject";
+import { Drafts } from "./pages/Drafts";
 import { Login } from "./pages/Login";
 import { MyDonations } from "./pages/MyDonations";
 import { ProjectDetail } from "./pages/ProjectDetail";
@@ -16,6 +18,7 @@ function App() {
     <AuthProvider>
       <ToastProvider>
         <BrowserRouter>
+          <SessionResume />
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/callback" element={<AuthCallback />} />
@@ -27,6 +30,7 @@ function App() {
 
               <Route element={<ProtectedRoute requiredScope="api/projects.write" />}>
                 <Route path="projects/create" element={<CreateProject />} />
+                <Route path="projects/drafts" element={<Drafts />} />
               </Route>
 
               <Route element={<ProtectedRoute requiredScope="api/donations.read" />}>

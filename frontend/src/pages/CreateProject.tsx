@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, CheckCircle, Loader, Rocket } from "lucide-react";
+import { ArrowLeft, CheckCircle, FileText, Loader, Rocket } from "lucide-react";
 import { projectsApi } from "../services/projects/api";
 import type { Project } from "../services/projects/types";
 import { useToast } from "../utils/ToastContext";
@@ -105,10 +105,15 @@ export const CreateProject = () => {
             </strong>
             .
           </p>
-          <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-left text-sm leading-6 text-amber-800">
-            El backend no expone una consulta de borradores. Publícalo desde esta pantalla para que aparezca en el catálogo antes de salir.
+          <div
+            role="note"
+            className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-left text-sm leading-6 text-amber-800"
+          >
+            Mientras no se publique, el proyecto no aparece en el catálogo y no recibe donaciones. Si
+            no lo publicas ahora, el borrador permanece disponible en la sección «Borradores», desde
+            donde podrás publicarlo más tarde.
           </div>
-          <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:justify-center">
+          <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:justify-center">
             <button
               type="button"
               onClick={handlePublish}
@@ -122,6 +127,13 @@ export const CreateProject = () => {
               )}
               {publishing ? "Publicando..." : "Publicar proyecto"}
             </button>
+            <Link
+              to="/projects/drafts"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 px-5 py-3 font-semibold text-slate-600 transition hover:bg-slate-50"
+            >
+              <FileText size={18} aria-hidden="true" />
+              Ver borradores
+            </Link>
             <button
               type="button"
               onClick={() => navigate("/")}

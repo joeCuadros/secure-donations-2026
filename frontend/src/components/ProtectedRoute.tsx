@@ -1,6 +1,7 @@
 import { Link, Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "react-oidc-context";
 import { AlertTriangle, ArrowLeft, Loader } from "lucide-react";
+import { hasSessionMarker } from "../auth/sessionMarker";
 import { hasPermission } from "../utils/permissions";
 
 interface ProtectedRouteProps {
@@ -41,7 +42,9 @@ export const ProtectedRoute = ({ requiredScope }: ProtectedRouteProps) => {
   const auth = useAuth();
   const location = useLocation();
 
-  if (auth.isLoading || auth.activeNavigator) return <LoadingScreen />;
+  // Tras recargar, SessionResume está a punto de reanudar la sesión: se evita pasar un instante por /login.
+  const resumingSession = !auth.user && !auth.error && hasSessionMarker();
+  if (auth.isLoading || auth.activeNavigator || resumingSession) return <LoadingScreen />;
 
   if (!auth.isAuthenticated) {
     return (

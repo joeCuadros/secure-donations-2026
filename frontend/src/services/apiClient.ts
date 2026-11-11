@@ -5,6 +5,17 @@ interface ApiClientOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined | null>;
 }
 
+// Conserva el código HTTP para que las pantallas distingan, por ejemplo, un 409 de un error genérico.
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 const getAccessToken = async (): Promise<string | undefined> => {
   let user = await userManager.getUser();
 
@@ -85,7 +96,7 @@ export const apiClient = async <T>(
   }
 
   if (!response.ok) {
-    throw new Error(getErrorMessage(responseBody, response.status));
+    throw new ApiError(getErrorMessage(responseBody, response.status), response.status);
   }
 
   return responseBody as T;
