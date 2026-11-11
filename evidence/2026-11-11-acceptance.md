@@ -105,3 +105,18 @@ el `sub` en claro (CA-10.2).
 
 Observación: la repetición idempotente de T06 genera un segundo evento `SUCCESS` para la misma
 donación. No afecta a los datos de negocio, pero la auditoría cuenta dos eventos para una sola creación.
+
+## Gestión de borradores (20:57 UTC)
+
+Comprobación manual del caso reportado durante el uso de la aplicación (HU-08, CA-08.2): un GESTOR
+abre la pantalla «Borradores» y publica desde ella un proyecto creado con anterioridad. Entradas del
+registro de acceso de API Gateway (`/aws/vendedlogs/secure-donations/academic/http-api`):
+
+```text
+20:52:30  GET   /v1/projects/drafts                 401   (sin token)
+20:57:28  GET   /v1/projects/drafts                 200   (GESTOR autenticado)
+20:57:35  PATCH /v1/projects/{projectId}/publish    200   (publicación desde «Borradores»)
+```
+
+Pendiente: la comprobación automática T03b de `scripts/acceptance.sh` (403 para DONANTE en ese
+endpoint) no se ha ejecutado todavía contra el despliegue.
