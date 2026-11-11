@@ -12,15 +12,15 @@ Parameters:
       - staging
       - prod
 
-  AllowedCorsOrigin:
-    Type: String
-    Default: "*"
+Conditions:
+  # CA-06.1: la ruta de simulacion solo existe en el stage academico.
+  IsAcademicStage: !Equals [!Ref StageName, academic]
 
 Globals:
   Function:
     Timeout: 10
     MemorySize: 256
-    Runtime: nodejs20.x
+    Runtime: nodejs24.x
     Architectures:
       - x86_64
     Environment:
@@ -36,7 +36,8 @@ Globals:
         LOG_LEVEL: info
 
 Resources:
-  # Politica IAM gestionada para autorizacion con Amazon Verified Permissions
+  # Politica IAM gestionada para autorizacion con Amazon Verified Permissions.
+  # Solo se adjunta a las funciones que invocan IsAuthorized (no a las tres publicas).
   AVPAuthPolicy:
     Type: AWS::IAM::ManagedPolicy
     Properties:
@@ -59,6 +60,9 @@ Resources:
         - email
       AutoVerifiedAttributes:
         - email
+      # El segundo factor (TOTP) de GESTOR y AUDITOR se exige desde Cognito, que actua como
+      # Policy Administrator: cada usuario privilegiado tiene configurada su preferencia de MFA TOTP.
+      # Sin MFA por SMS (CA-11.1).
       MfaConfiguration: OPTIONAL
       EnabledMfas:
         - SOFTWARE_TOKEN_MFA
@@ -120,6 +124,20 @@ Resources:
       ClientName: !Sub secure-donations-client-${StageName}
       UserPoolId: !Ref CognitoUserPool
       GenerateSecret: false
+      # AD-07 / CA-03.3: tokens de vida corta y refresh token acotado y revocable.
+      AccessTokenValidity: 15
+      IdTokenValidity: 15
+      RefreshTokenValidity: 1
+      TokenValidityUnits:
+        AccessToken: minutes
+        IdToken: minutes
+        RefreshToken: days
+      EnableTokenRevocation: true
+      PreventUserExistenceErrors: ENABLED
+      # Solo renovacion de tokens y SRP: sin flujo de contrasena directa ni flujo implicito.
+      ExplicitAuthFlows:
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_SRP_AUTH
       AllowedOAuthFlows:
         - code
       AllowedOAuthFlowsUserPoolClient: true
@@ -133,19 +151,40 @@ Resources:
         - api/audit.read
       CallbackURLs:
         - http://localhost:5173/callback
+        - !Sub https://${FrontendDistribution.DomainName}/callback
       LogoutURLs:
         - http://localhost:5173/login
+        - !Sub https://${FrontendDistribution.DomainName}/login
       SupportedIdentityProviders:
         - COGNITO
 
   # 2. API Gateway HTTP API y Autorizador JWT por defecto
+  HttpApiAccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      # El prefijo /aws/vendedlogs/ evita el limite de tamano de la politica de recursos de CloudWatch Logs.
+      LogGroupName: !Sub /aws/vendedlogs/secure-donations/${StageName}/http-api
+      RetentionInDays: 14
+
   HttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
       StageName: !Ref StageName
+      # Limites del stage contra abuso y fuerza bruta (HTTP API no admite AWS WAF).
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 20
+        ThrottlingRateLimit: 10
+      # Log de acceso en JSON: no incluye la cabecera Authorization ni el cuerpo.
+      AccessLogSettings:
+        DestinationArn: !GetAtt HttpApiAccessLogGroup.Arn
+        Format: '{"requestId":"$context.requestId","requestTimeEpoch":"$context.requestTimeEpoch","routeKey":"$context.routeKey","status":"$context.status","responseLatency":"$context.responseLatency","integrationStatus":"$context.integrationStatus","authorizerError":"$context.authorizer.error"}'
+      # CORS restringido al origen de CloudFront y al entorno local de desarrollo.
       CorsConfiguration:
         AllowOrigins:
-          - !Ref AllowedCorsOrigin
+          - !Sub https://${FrontendDistribution.DomainName}
+          - http://localhost:5173
         AllowHeaders:
           - Authorization
           - Content-Type
@@ -155,6 +194,7 @@ Resources:
           - POST
           - PATCH
           - OPTIONS
+        MaxAge: 600
       Auth:
         DefaultAuthorizer: CognitoJwtAuthorizer
         Authorizers:
@@ -166,8 +206,12 @@ Resources:
             IdentitySource: $request.header.Authorization
 
   # 3. Tablas DynamoDB
+  # Cifrado en reposo: DynamoDB cifra todas las tablas con una clave propiedad de AWS (predeterminado, sin costo).
+  # No se habilita PointInTimeRecovery porque se factura por GB-mes y es un laboratorio desechable.
   ProjectsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TableName: !Sub Projects-${StageName}
       BillingMode: PAY_PER_REQUEST
@@ -193,6 +237,8 @@ Resources:
 
   DonationsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TableName: !Sub Donations-${StageName}
       BillingMode: PAY_PER_REQUEST
@@ -218,6 +264,8 @@ Resources:
 
   IdempotencyTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TableName: !Sub Idempotency-${StageName}
       BillingMode: PAY_PER_REQUEST
@@ -233,6 +281,8 @@ Resources:
 
   AuditEventsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TableName: !Sub AuditEvents-${StageName}
       BillingMode: PAY_PER_REQUEST
@@ -258,16 +308,29 @@ Resources:
           Projection:
             ProjectionType: ALL
 
-  # 4. Funciones Lambda
+  # 4. Grupos de logs (retencion de 14 dias, CA-NF07.1) y funciones Lambda.
+  # Cada funcion escribe en su grupo explicito mediante LoggingConfig, de modo que Lambda no cree otro sin retencion.
+  # Cada rol solo recibe las acciones DynamoDB que el handler ejecuta sobre la tabla o indice concretos (CA-NF03.1).
+  ListProjectsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+
   ListProjectsFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../backend/dist
       Handler: projects/api.listProjectsHandler
+      LoggingConfig:
+        LogGroup: !Ref ListProjectsLogGroup
       Policies:
-        - !Ref AVPAuthPolicy
-        - DynamoDBReadPolicy:
-            TableName: !Ref ProjectsTable
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !Sub ${ProjectsTable.Arn}/index/status-createdAt
       Events:
         ApiEvent:
           Type: HttpApi
@@ -278,15 +341,26 @@ Resources:
             Auth:
               Authorizer: NONE
 
+  GetProjectLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+
   GetProjectFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../backend/dist
       Handler: projects/api.getProjectHandler
+      LoggingConfig:
+        LogGroup: !Ref GetProjectLogGroup
       Policies:
-        - !Ref AVPAuthPolicy
-        - DynamoDBReadPolicy:
-            TableName: !Ref ProjectsTable
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt ProjectsTable.Arn
       Events:
         ApiEvent:
           Type: HttpApi
@@ -297,15 +371,26 @@ Resources:
             Auth:
               Authorizer: NONE
 
+  GetProjectStatsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+
   GetProjectStatsFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../backend/dist
       Handler: projects/api.getProjectStatsHandler
+      LoggingConfig:
+        LogGroup: !Ref GetProjectStatsLogGroup
       Policies:
-        - !Ref AVPAuthPolicy
-        - DynamoDBReadPolicy:
-            TableName: !Ref ProjectsTable
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource: !GetAtt ProjectsTable.Arn
       Events:
         ApiEvent:
           Type: HttpApi
@@ -316,17 +401,29 @@ Resources:
             Auth:
               Authorizer: NONE
 
+  CreateProjectLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+
   CreateProjectFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../backend/dist
       Handler: projects/api.createProjectHandler
+      LoggingConfig:
+        LogGroup: !Ref CreateProjectLogGroup
       Policies:
         - !Ref AVPAuthPolicy
-        - DynamoDBCrudPolicy:
-            TableName: !Ref ProjectsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref AuditEventsTable
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource:
+                - !GetAtt ProjectsTable.Arn
+                - !GetAtt AuditEventsTable.Arn
       Events:
         ApiEvent:
           Type: HttpApi
@@ -338,17 +435,32 @@ Resources:
               AuthorizationScopes:
                 - api/projects.write
 
+  PublishProjectLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+
   PublishProjectFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../backend/dist
       Handler: projects/api.publishProjectHandler
+      LoggingConfig:
+        LogGroup: !Ref PublishProjectLogGroup
       Policies:
         - !Ref AVPAuthPolicy
-        - DynamoDBCrudPolicy:
-            TableName: !Ref ProjectsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref AuditEventsTable
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt ProjectsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt AuditEventsTable.Arn
       Events:
         ApiEvent:
           Type: HttpApi
@@ -360,21 +472,36 @@ Resources:
               AuthorizationScopes:
                 - api/projects.write
 
+  CreateDonationLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+
   CreateDonationFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../backend/dist
       Handler: donations/api.createDonationHandler
+      LoggingConfig:
+        LogGroup: !Ref CreateDonationLogGroup
       Policies:
         - !Ref AVPAuthPolicy
-        - DynamoDBCrudPolicy:
-            TableName: !Ref DonationsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref IdempotencyTable
-        - DynamoDBReadPolicy:
-            TableName: !Ref ProjectsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref AuditEventsTable
+        # TransactWriteItems solo requiere los permisos de las operaciones Put que contiene.
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: dynamodb:GetItem
+              Resource:
+                - !GetAtt IdempotencyTable.Arn
+                - !GetAtt ProjectsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource:
+                - !GetAtt IdempotencyTable.Arn
+                - !GetAtt DonationsTable.Arn
+                - !GetAtt AuditEventsTable.Arn
       Events:
         ApiEvent:
           Type: HttpApi
@@ -386,19 +513,39 @@ Resources:
               AuthorizationScopes:
                 - api/donations.write
 
+  # CA-06.1: la funcion, su grupo de logs y su ruta solo existen en el stage academico.
+  SimulateDonationLogGroup:
+    Type: AWS::Logs::LogGroup
+    Condition: IsAcademicStage
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+
   SimulateDonationFunction:
     Type: AWS::Serverless::Function
+    Condition: IsAcademicStage
     Properties:
       CodeUri: ../backend/dist
       Handler: donations/api.simulateDonationHandler
+      LoggingConfig:
+        LogGroup: !Ref SimulateDonationLogGroup
       Policies:
         - !Ref AVPAuthPolicy
-        - DynamoDBCrudPolicy:
-            TableName: !Ref DonationsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref ProjectsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref AuditEventsTable
+        # TransactWriteItems solo requiere los permisos de las operaciones Update que contiene.
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:UpdateItem
+              Resource: !GetAtt DonationsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:UpdateItem
+              Resource: !GetAtt ProjectsTable.Arn
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt AuditEventsTable.Arn
       Events:
         ApiEvent:
           Type: HttpApi
@@ -410,15 +557,27 @@ Resources:
               AuthorizationScopes:
                 - api/donations.write
 
+  ListMyDonationsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+
   ListMyDonationsFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../backend/dist
       Handler: donations/api.listMyDonationsHandler
+      LoggingConfig:
+        LogGroup: !Ref ListMyDonationsLogGroup
       Policies:
         - !Ref AVPAuthPolicy
-        - DynamoDBReadPolicy:
-            TableName: !Ref DonationsTable
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !Sub ${DonationsTable.Arn}/index/donorSub-createdAt
       Events:
         ApiEvent:
           Type: HttpApi
@@ -430,15 +589,29 @@ Resources:
               AuthorizationScopes:
                 - api/donations.read
 
+  ListAuditLogsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+
   ListAuditLogsFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../backend/dist
       Handler: audit/api.listAuditLogsHandler
+      LoggingConfig:
+        LogGroup: !Ref ListAuditLogsLogGroup
       Policies:
         - !Ref AVPAuthPolicy
-        - DynamoDBReadPolicy:
-            TableName: !Ref AuditEventsTable
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource:
+                - !GetAtt AuditEventsTable.Arn
+                - !Sub ${AuditEventsTable.Arn}/index/AllAuditLogsIndex
       Events:
         ApiEvent:
           Type: HttpApi
@@ -450,49 +623,287 @@ Resources:
               AuthorizationScopes:
                 - api/audit.read
 
-  # 5. Motor de politicas Amazon Verified Permissions
+  # 5. Motor de politicas Amazon Verified Permissions.
+  # Un recurso Policy estatico admite exactamente una sentencia: hay una politica por cada permit
+  # y el contenido refleja policies/*.cedar. Los nombres de entidades, acciones y atributos son los
+  # que envia backend/src/authz/services/avp.service.ts (espacio de nombres SecureDonations).
   PolicyStore:
     Type: AWS::VerifiedPermissions::PolicyStore
     Properties:
+      Description: Politicas Cedar de la Plataforma de Donaciones Seguras
       ValidationSettings:
-        Mode: OFF
+        Mode: "OFF"
 
-  CoreAuthorizationPolicy:
+  CreateProjectPolicy:
     Type: AWS::VerifiedPermissions::Policy
-    DependsOn: PolicyStore
     Properties:
       PolicyStoreId: !GetAtt PolicyStore.PolicyStoreId
       Definition:
         Static:
+          Description: GESTOR puede crear proyectos
+          Statement: |
+            permit (
+              principal in SecureDonations::UserGroup::"GESTOR",
+              action == SecureDonations::Action::"CreateProject",
+              resource
+            );
+
+  PublishProjectPolicy:
+    Type: AWS::VerifiedPermissions::Policy
+    Properties:
+      PolicyStoreId: !GetAtt PolicyStore.PolicyStoreId
+      Definition:
+        Static:
+          Description: GESTOR puede publicar proyectos
+          Statement: |
+            permit (
+              principal in SecureDonations::UserGroup::"GESTOR",
+              action == SecureDonations::Action::"PublishProject",
+              resource
+            );
+
+  CreateDonationPolicy:
+    Type: AWS::VerifiedPermissions::Policy
+    Properties:
+      PolicyStoreId: !GetAtt PolicyStore.PolicyStoreId
+      Definition:
+        Static:
+          Description: DONANTE puede donar solo a proyectos publicados
+          Statement: |
+            permit (
+              principal in SecureDonations::UserGroup::"DONANTE",
+              action == SecureDonations::Action::"CreateDonation",
+              resource
+            )
+            when {
+              resource.status == "PUBLICADO"
+            };
+
+  SimulateDonationPolicy:
+    Type: AWS::VerifiedPermissions::Policy
+    Properties:
+      PolicyStoreId: !GetAtt PolicyStore.PolicyStoreId
+      Definition:
+        Static:
+          Description: DONANTE puede simular solo sus propias donaciones
+          Statement: |
+            permit (
+              principal in SecureDonations::UserGroup::"DONANTE",
+              action == SecureDonations::Action::"SimulateDonation",
+              resource
+            )
+            when {
+              principal.sub == resource.donorSub
+            };
+
+  ReadMyDonationsPolicy:
+    Type: AWS::VerifiedPermissions::Policy
+    Properties:
+      PolicyStoreId: !GetAtt PolicyStore.PolicyStoreId
+      Definition:
+        Static:
+          Description: DONANTE puede listar solo su propio historial
+          Statement: |
+            permit (
+              principal in SecureDonations::UserGroup::"DONANTE",
+              action == SecureDonations::Action::"ReadMyDonations",
+              resource
+            )
+            when {
+              principal.sub == resource.donorSub
+            };
+
+  # Conserva el identificador logico historico de la politica del grupo AUDITOR.
+  # El MFA de AUDITOR se exige en Cognito (Policy Administrator) mediante su preferencia TOTP,
+  # porque los access tokens de Cognito no incluyen el claim amr: no hay condicion de MFA en Cedar.
+  CoreAuthorizationPolicy:
+    Type: AWS::VerifiedPermissions::Policy
+    Properties:
+      PolicyStoreId: !GetAtt PolicyStore.PolicyStoreId
+      Definition:
+        Static:
+          Description: AUDITOR puede consultar los eventos de auditoria
           Statement: |
             permit (
               principal in SecureDonations::UserGroup::"AUDITOR",
               action == SecureDonations::Action::"ReadAuditLogs",
               resource
-            ) when { principal.isMfaVerified == true };
-            
-            permit (
-              principal in SecureDonations::UserGroup::"DONANTE",
-              action == SecureDonations::Action::"SimulateDonation",
-              resource
-            ) when { principal.sub == resource.donorSub };
-            
-            permit (
-              principal in SecureDonations::UserGroup::"DONANTE",
-              action == SecureDonations::Action::"ReadMyDonations",
-              resource
-            ) when { principal.sub == resource.donorSub };
+            );
+
+  # 6. Frontend: bucket S3 privado servido solo por CloudFront con Origin Access Control (RNF-HU-01, RNF-HU-11).
+  # El bucket debe vaciarse antes de eliminar la pila (sam delete), porque CloudFormation no borra buckets con objetos.
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  FrontendOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub ${AWS::StackName}-frontend-oac
+        Description: Acceso firmado (SigV4) de CloudFront al bucket privado del frontend
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # Cache corta (5 minutos por defecto): los archivos de Vite llevan hash en el nombre, pero index.html no.
+  FrontendCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub ${AWS::StackName}-frontend-cache
+        MinTTL: 0
+        DefaultTTL: 300
+        MaxTTL: 86400
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          CookiesConfig:
+            CookieBehavior: none
+          HeadersConfig:
+            HeaderBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: none
+
+  # CA-NF11.2: cabeceras de seguridad. connect-src usa el comodin de execute-api de la region
+  # (no la API concreta) para evitar una dependencia circular, ya que el CORS de la API referencia la distribucion.
+  # style-src no necesita 'unsafe-inline': el build de Vite genera una hoja de estilos externa y React asigna
+  # los anchos de las barras de progreso mediante la API CSSOM, que la CSP permite.
+  FrontendResponseHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub ${AWS::StackName}-frontend-security-headers
+        SecurityHeadersConfig:
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 31536000
+            IncludeSubdomains: true
+            Override: true
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            FrameOption: DENY
+            Override: true
+          ReferrerPolicy:
+            ReferrerPolicy: no-referrer
+            Override: true
+          ContentSecurityPolicy:
+            Override: true
+            ContentSecurityPolicy: !Sub >-
+              default-src 'none';
+              script-src 'self';
+              style-src 'self';
+              img-src 'self' data:;
+              font-src 'self';
+              connect-src 'self' https://*.execute-api.${AWS::Region}.amazonaws.com https://${CognitoUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com https://cognito-idp.${AWS::Region}.amazonaws.com;
+              base-uri 'self';
+              form-action 'self';
+              frame-ancestors 'none';
+              object-src 'none';
+              manifest-src 'self'
+        CustomHeadersConfig:
+          Items:
+            - Header: Permissions-Policy
+              Value: camera=(), microphone=(), geolocation=()
+              Override: true
+
+  FrontendDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub Frontend SecureDonations (${StageName})
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        IPV6Enabled: true
+        Origins:
+          - Id: frontend-bucket
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt FrontendOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: frontend-bucket
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          CachePolicyId: !Ref FrontendCachePolicy
+          ResponseHeadersPolicyId: !Ref FrontendResponseHeadersPolicy
+        # Respaldo de SPA: S3 privado responde 403 para rutas inexistentes.
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 0
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+
+  # Solo esta distribucion puede leer objetos del bucket.
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontDistributionRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub ${FrontendBucket.Arn}/*
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${FrontendDistribution}
 
 Outputs:
   HttpApiEndpoint:
-    Description: URL Base para llamadas a la API
+    Description: URL Base para llamadas a la API (VITE_API_URL)
     Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}
   CognitoUserPoolId:
-    Description: COGNITO_USER_POOL_ID para variables de entorno
+    Description: COGNITO_USER_POOL_ID para variables de entorno (VITE_COGNITO_USER_POOL_ID)
     Value: !Ref CognitoUserPool
   CognitoUserPoolClientId:
-    Description: COGNITO_CLIENT_ID para variables de entorno
+    Description: COGNITO_CLIENT_ID para variables de entorno (VITE_COGNITO_CLIENT_ID)
     Value: !Ref CognitoUserPoolClient
+  CognitoHostedDomain:
+    Description: Host completo del dominio de Cognito, sin esquema (VITE_COGNITO_DOMAIN)
+    Value: !Sub ${CognitoUserPoolDomain}.auth.${AWS::Region}.amazoncognito.com
   VerifiedPermissionsPolicyStoreId:
     Description: AVP_POLICY_STORE_ID para variables de entorno
     Value: !GetAtt PolicyStore.PolicyStoreId
+  FrontendBucketName:
+    Description: Bucket S3 privado donde se publica el build del frontend
+    Value: !Ref FrontendBucket
+  CloudFrontDistributionId:
+    Description: Identificador de la distribucion (para invalidaciones de cache)
+    Value: !Ref FrontendDistribution
+  CloudFrontDomainName:
+    Description: Dominio de CloudFront del frontend
+    Value: !GetAtt FrontendDistribution.DomainName
+  FrontendUrl:
+    Description: URL HTTPS del frontend
+    Value: !Sub https://${FrontendDistribution.DomainName}

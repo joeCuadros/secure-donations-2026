@@ -1,0 +1,12 @@
+version = 0.1
+
+[default.global.parameters]
+stack_name = "secure-donations-backend-academic"
+
+[default.deploy.parameters]
+stack_name = "secure-donations-backend-academic"
+region = "us-east-2"
+resolve_s3 = true
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM"
+parameter_overrides = "StageName=academic"
+confirm_changeset = true
