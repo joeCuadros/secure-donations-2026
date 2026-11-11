@@ -8,6 +8,25 @@ interface JwtAuthorizer {
   };
 }
 
+/**
+ * Normaliza un claim con varios valores (`cognito:groups`, `scope`).
+ * El authorizer JWT de API Gateway HTTP API entrega los claims de tipo arreglo como un
+ * único string, por ejemplo "[DONANTE]" o "[GESTOR AUDITOR]" (separado por espacios y entre
+ * corchetes). También se aceptan arreglos reales y strings separados por comas o espacios.
+ */
+export const parseClaimList = (raw: unknown): string[] => {
+  const values: unknown[] = Array.isArray(raw)
+    ? raw
+    : typeof raw === 'string'
+      ? raw.trim().replace(/^\[|\]$/g, '').split(/[\s,]+/)
+      : [];
+
+  return values
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.trim().replace(/^["']|["']$/g, ''))
+    .filter((value) => value.length > 0);
+};
+
 export const extractUserContext = (event: APIGatewayProxyEventV2): AuthenticatedUser => {
   const authorizer = (
     event.requestContext as typeof event.requestContext & { authorizer?: JwtAuthorizer; }
@@ -19,20 +38,8 @@ export const extractUserContext = (event: APIGatewayProxyEventV2): Authenticated
   const sub = claims['sub'];
   if (typeof sub !== 'string' || !sub) throw AppError.unauthorized('El claim sub es obligatorio');
 
-  let groups: string[] = [];
-  const rawGroups = claims['cognito:groups'];
-  if (Array.isArray(rawGroups)) groups = rawGroups.map(String);
-  else if (typeof rawGroups === 'string') groups = rawGroups.split(',').map((g) => g.trim());
-
-  let scopes: string[] = [];
-  const rawScope = claims['scope'];
-  if (typeof rawScope === 'string') scopes = rawScope.split(' ').filter(Boolean);
-  else if (Array.isArray(rawScope)) scopes = rawScope.map(String);
-
-  // Verificación MFA desde el claim 'amr'
-  const amr = claims['amr'] || claims['cognito:amr'] || [];
-  const amrArray = Array.isArray(amr) ? amr : typeof amr === 'string' ? amr.split(',') : [];
-  const isMfaVerified = amrArray.some((val: string) => val.toLowerCase().includes('mfa'));
+  const groups = parseClaimList(claims['cognito:groups']);
+  const scopes = parseClaimList(claims['scope']);
 
   const email = claims['email'];
   const username = claims['username'] ?? claims['cognito:username'];
@@ -41,14 +48,14 @@ export const extractUserContext = (event: APIGatewayProxyEventV2): Authenticated
     sub,
     groups,
     scopes,
-    isMfaVerified,
     ...(typeof email === 'string' ? { email } : {}),
     ...(typeof username === 'string' ? { username } : {}),
   };
 };
 
+// Falla cerrada: una ruta que exige scope nunca se concede a un token sin scopes.
 export const verifyScope = (user: AuthenticatedUser, requiredScope: string): void => {
-  if (user.scopes.length > 0 && !user.scopes.includes(requiredScope)) {
+  if (!user.scopes.includes(requiredScope)) {
     throw AppError.forbidden(`Scope insuficiente. Se requiere ${requiredScope}.`);
   }
 };

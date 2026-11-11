@@ -4,3 +4,6 @@ node_modules/
 # Variables de entorno
 .env.*
 !.env.example
+
+# Índice local de CodeGraph
+.codegraph/

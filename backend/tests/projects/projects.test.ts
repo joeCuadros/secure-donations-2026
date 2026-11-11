@@ -31,7 +31,6 @@ describe('Dominio Projects - Comprehensive Test Suite', () => {
     sub: 'sub_gestor_01',
     groups: ['GESTOR'],
     scopes: ['api/projects.write'],
-    isMfaVerified: true,
   };
 
   const mockGestorEvent = (body?: unknown, pathParameters?: any, qs?: any): APIGatewayProxyEventV2 =>
@@ -44,7 +43,6 @@ describe('Dominio Projects - Comprehensive Test Suite', () => {
               sub: 'sub_gestor_01',
               'cognito:groups': 'GESTOR',
               scope: 'api/projects.write',
-              amr: ['mfa'],
             },
           },
         },
@@ -179,6 +177,69 @@ describe('Dominio Projects - Comprehensive Test Suite', () => {
       vi.mocked(docClient.send).mockRejectedValueOnce(new Error('fail'));
       const res = (await getProjectStatsHandler(mockGestorEvent(undefined, {projectId: 'prj_01'}))) as APIGatewayProxyStructuredResultV2;
       expect(res.statusCode).toBe(500);
+    });
+  });
+
+  describe('Contrato HTTP: errores, carreras y paginación', () => {
+    it('CA-08.1: createProjectHandler responde 400 uniforme ante un JSON malformado (no 500)', async () => {
+      const event = { ...mockGestorEvent(), body: '{"title": "Parque' } as APIGatewayProxyEventV2;
+
+      const res = (await createProjectHandler(event)) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body as string)).toEqual({
+        code: 'VALIDATION_ERROR',
+        message: expect.any(String),
+        requestId: 'req_proj_123',
+      });
+      expect(docClient.send).not.toHaveBeenCalled();
+    });
+
+    it('CA-08.2: publishProjectHandler responde 409 si otra solicitud publica primero (ConditionalCheckFailedException)', async () => {
+      vi.mocked(docClient.send)
+        .mockResolvedValueOnce({ Item: { projectId: 'prj_01', status: 'BORRADOR' } } as never)
+        .mockRejectedValueOnce({ name: 'ConditionalCheckFailedException' } as never);
+
+      const res = (await publishProjectHandler(mockGestorEvent(undefined, { projectId: 'prj_01' }))) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(409);
+      expect(JSON.parse(res.body as string).code).toBe('CONFLICT');
+      expect(docClient.send).toHaveBeenCalledTimes(2); // sin evento de auditoría
+    });
+
+    it('CA-08.2: publishProjectService traduce la condición fallida a un conflicto de negocio', async () => {
+      vi.mocked(docClient.send)
+        .mockResolvedValueOnce({ Item: { projectId: 'prj_01', status: 'BORRADOR' } } as never)
+        .mockRejectedValueOnce({ name: 'ConditionalCheckFailedException' } as never);
+
+      await expect(publishProjectService('prj_01', mockUser)).rejects.toThrow(/ya se encuentra publicado/);
+    });
+
+    it('CA-02.2: getProjectService mantiene 404 para visitantes ante un BORRADOR o un id inexistente', async () => {
+      vi.mocked(docClient.send)
+        .mockResolvedValueOnce({ Item: { projectId: 'prj_01', status: 'BORRADOR' } } as never)
+        .mockResolvedValueOnce({ Item: undefined } as never);
+
+      await expect(getProjectService('prj_01')).rejects.toMatchObject({ statusCode: 404 });
+      await expect(getProjectService('prj_missing')).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it('CA-NF05: listProjectsHandler usa 20 como límite por defecto y acepta hasta 100', async () => {
+      vi.mocked(docClient.send).mockResolvedValue({ Items: [] } as never);
+
+      await listProjectsHandler(mockGestorEvent());
+      await listProjectsHandler(mockGestorEvent(undefined, undefined, { limit: '100' }));
+
+      const limits = vi.mocked(docClient.send).mock.calls.map(([command]) => (command as { input: { Limit: number } }).input.Limit);
+      expect(limits).toEqual([20, 100]);
+    });
+
+    it.each(['0', '101', 'abc', '1.5', '-1', ''])('CA-NF05: listProjectsHandler responde 400 si limit=%j no es un entero entre 1 y 100', async (limit) => {
+      const res = (await listProjectsHandler(mockGestorEvent(undefined, undefined, { limit }))) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body as string).code).toBe('VALIDATION_ERROR');
+      expect(docClient.send).not.toHaveBeenCalled();
     });
   });
 });

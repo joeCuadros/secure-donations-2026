@@ -3,6 +3,7 @@ import { docClient } from '../../shared/aws/dynamodb.client.js';
 import { env } from '../../shared/config/env.js';
 import type { DonationItem } from '../types.js';
 import { AppError } from '../../shared/errors/app-error.js';
+import { isConditionalWriteConflict } from '../../shared/errors/dynamo-errors.js';
 import { authorizeActionService } from '../../authz/services/avp.service.js';
 import type { AuthenticatedUser } from '../../authz/types.js';
 
@@ -67,7 +68,16 @@ export const simulateDonationService = async (
     });
   }
 
-  await docClient.send(new TransactWriteCommand({ TransactItems: transactItems }));
+  try {
+    await docClient.send(new TransactWriteCommand({ TransactItems: transactItems }));
+  } catch (error: unknown) {
+    // Una solicitud concurrente ya movió la donación fuera de PENDIENTE_SIMULACION: solo la primera
+    // transición modifica el acumulado y las demás reciben 409 (CA-06.2, CA-NF04.1).
+    if (isConditionalWriteConflict(error)) {
+      throw AppError.conflict('La donación ya fue procesada por otra solicitud.');
+    }
+    throw error;
+  }
 
   return {
     donationId,

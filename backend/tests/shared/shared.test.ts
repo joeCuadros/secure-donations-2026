@@ -31,7 +31,6 @@ describe('Dominio Projects - Comprehensive Test Suite', () => {
     sub: 'sub_gestor_01',
     groups: ['GESTOR'],
     scopes: ['api/projects.write'],
-    isMfaVerified: true,
   };
 
   const mockGestorEvent = (body?: unknown, pathParameters?: any, qs?: any): APIGatewayProxyEventV2 =>
@@ -44,7 +43,6 @@ describe('Dominio Projects - Comprehensive Test Suite', () => {
               sub: 'sub_gestor_01',
               'cognito:groups': 'GESTOR',
               scope: 'api/projects.write',
-              amr: ['mfa'],
             },
           },
         },

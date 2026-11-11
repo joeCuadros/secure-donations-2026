@@ -28,7 +28,6 @@ describe('Dominio Audit - Comprehensive Test Suite', () => {
               sub: 'sub_auditor_001',
               'cognito:groups': 'AUDITOR',
               scope: 'api/audit.read',
-              amr: ['mfa'],
             },
           },
         },
@@ -88,6 +87,130 @@ describe('Dominio Audit - Comprehensive Test Suite', () => {
       const event = mockAuditorEvent();
       const res = (await listAuditLogsHandler(event)) as APIGatewayProxyStructuredResultV2;
       expect(res.statusCode).toBe(500);
+    });
+  });
+
+  describe('Índice global AllAuditLogsIndex (CA-10.1, CA-10.2)', () => {
+    const sentInput = (index = 0) =>
+      (vi.mocked(docClient.send).mock.calls[index]![0] as unknown as { input: Record<string, any> }).input;
+
+    it('CA-10.2: cada evento de auditoría escribe gsi1pk con la partición constante del índice global', async () => {
+      vi.mocked(docClient.send).mockResolvedValueOnce({} as never);
+
+      await createAuditLogService({
+        eventType: 'PROJECT_EVENT',
+        requestId: 'req_xyz',
+        actorSub: 'sub_gestor_01',
+        action: 'CREATE_PROJECT',
+        resourceRef: 'prj_01',
+        outcome: 'SUCCESS',
+      });
+
+      expect(sentInput().Item.gsi1pk).toBe('AUDIT');
+      expect(sentInput().Item.eventType).toBe('PROJECT_EVENT');
+    });
+
+    it('CA-10.1: sin eventType se listan todos los tipos mediante el índice AllAuditLogsIndex', async () => {
+      vi.mocked(docClient.send).mockResolvedValueOnce({ Items: [] } as never);
+
+      await listAuditLogsService(undefined, undefined, undefined, 10);
+
+      const input = sentInput();
+      expect(input.IndexName).toBe('AllAuditLogsIndex');
+      expect(input.KeyConditionExpression).toBe('gsi1pk = :pk');
+      expect(input.ExpressionAttributeValues).toEqual({ ':pk': 'AUDIT' });
+      expect(input.ScanIndexForward).toBe(false);
+    });
+
+    it('CA-10.1: con eventType se consulta la tabla por su clave primaria, sin índice', async () => {
+      vi.mocked(docClient.send).mockResolvedValueOnce({ Items: [] } as never);
+
+      await listAuditLogsService('PROJECT_EVENT', undefined, undefined, 10);
+
+      const input = sentInput();
+      expect(input.IndexName).toBeUndefined();
+      expect(input.KeyConditionExpression).toBe('eventType = :et');
+      expect(input.ExpressionAttributeValues).toEqual({ ':et': 'PROJECT_EVENT' });
+    });
+
+    it('CA-10.1: el filtro de fechas aplica al índice global cuando no hay eventType', async () => {
+      vi.mocked(docClient.send).mockResolvedValueOnce({ Items: [] } as never);
+
+      await listAuditLogsService(undefined, '2026-11-01T00:00:00.000Z', '2026-11-05T23:59:59.000Z', 10);
+
+      const input = sentInput();
+      expect(input.KeyConditionExpression).toBe('gsi1pk = :pk AND timestampEventId BETWEEN :fKey AND :tKey');
+      expect(input.ExpressionAttributeValues).toEqual({
+        ':pk': 'AUDIT',
+        ':fKey': '2026-11-01T00:00:00.000Z#',
+        ':tKey': '2026-11-05T23:59:59.000Z#~',
+      });
+    });
+
+    it('CA-10.2: la respuesta no expone el atributo interno gsi1pk', async () => {
+      vi.mocked(docClient.send).mockResolvedValueOnce({
+        Items: [{ eventType: 'PROJECT_EVENT', gsi1pk: 'AUDIT', timestampEventId: 't#e', timestamp: 't', eventId: 'e', requestId: 'r', actorRef: 'actor_1', action: 'CREATE_PROJECT', resourceRef: 'prj_01', outcome: 'SUCCESS' }],
+      } as never);
+
+      const res = await listAuditLogsService(undefined, undefined, undefined, 10);
+
+      expect(res.items[0]).not.toHaveProperty('gsi1pk');
+      expect(res.items[0]).toMatchObject({ action: 'CREATE_PROJECT', requestId: 'r' });
+    });
+  });
+
+  describe('Validación de parámetros de consulta (CA-10.1)', () => {
+    it('listAuditLogsHandler usa 20 como límite por defecto y consulta el índice global', async () => {
+      vi.mocked(docClient.send).mockResolvedValueOnce({ Items: [] } as never);
+
+      await listAuditLogsHandler(mockAuditorEvent());
+
+      const input = (vi.mocked(docClient.send).mock.calls[0]![0] as unknown as { input: Record<string, any> }).input;
+      expect(input.Limit).toBe(20);
+      expect(input.IndexName).toBe('AllAuditLogsIndex');
+    });
+
+    it.each(['0', '101', 'abc', '1.5', '-3'])('listAuditLogsHandler responde 400 si limit=%j no es un entero entre 1 y 100', async (limit) => {
+      const res = (await listAuditLogsHandler(mockAuditorEvent({ limit }))) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body as string)).toEqual({
+        code: 'VALIDATION_ERROR',
+        message: expect.any(String),
+        requestId: 'req_audit_555',
+      });
+      expect(docClient.send).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['from', 'ayer'],
+      ['to', '2026-13-45T00:00:00Z'],
+      ['from', '2026-11-01'],
+    ])('listAuditLogsHandler responde 400 si %s=%j no es una fecha ISO 8601 con hora', async (field, value) => {
+      const res = (await listAuditLogsHandler(mockAuditorEvent({ [field]: value }))) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(400);
+      expect(docClient.send).not.toHaveBeenCalled();
+    });
+
+    it('listAuditLogsHandler responde 400 si from es posterior a to', async () => {
+      const res = (await listAuditLogsHandler(
+        mockAuditorEvent({ from: '2026-11-05T00:00:00Z', to: '2026-11-01T00:00:00Z' })
+      )) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('listAuditLogsHandler normaliza from/to a milisegundos UTC para que la comparación de claves sea correcta', async () => {
+      vi.mocked(docClient.send).mockResolvedValueOnce({ Items: [] } as never);
+
+      await listAuditLogsHandler(
+        mockAuditorEvent({ from: '2026-11-01T00:00:00Z', to: '2026-11-01T05:00:00-05:00' })
+      );
+
+      const input = (vi.mocked(docClient.send).mock.calls[0]![0] as unknown as { input: Record<string, any> }).input;
+      expect(input.ExpressionAttributeValues[':fKey']).toBe('2026-11-01T00:00:00.000Z#');
+      expect(input.ExpressionAttributeValues[':tKey']).toBe('2026-11-01T10:00:00.000Z#~');
     });
   });
 });
