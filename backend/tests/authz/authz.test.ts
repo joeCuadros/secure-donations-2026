@@ -208,6 +208,29 @@ describe('Dominio Authz - Contexto, Scopes y AVP', () => {
       });
     });
 
+    it.each(['CreateProject', 'ReadMyDonations', 'ReadAuditLogs'])(
+      'HU-12: %s no tiene recurso propio y se evalúa contra el singleton SecureDonations::Application sin atributos',
+      async (action) => {
+        mockSend.mockResolvedValueOnce({ decision: 'ALLOW' });
+        await authorizeActionService(user, action);
+
+        const input = mockSend.mock.calls[0]![0].args;
+        expect(input.resource).toEqual({ entityType: 'SecureDonations::Application', entityId: 'secure-donations' });
+        const entities = input.entities.entityList as Array<{ identifier: { entityType: string }; attributes?: Record<string, unknown> }>;
+        expect(entities.find((e) => e.identifier.entityType === 'SecureDonations::Application')?.attributes).toEqual({});
+      }
+    );
+
+    it('HU-12: PublishProject autoriza antes de leer el proyecto y no envía atributos de Project', async () => {
+      mockSend.mockResolvedValueOnce({ decision: 'ALLOW' });
+      await authorizeActionService(user, 'PublishProject', 'Project', 'prj_1');
+
+      const input = mockSend.mock.calls[0]![0].args;
+      expect(input.resource).toEqual({ entityType: 'SecureDonations::Project', entityId: 'prj_1' });
+      const entities = input.entities.entityList as Array<{ identifier: { entityType: string }; attributes?: Record<string, unknown> }>;
+      expect(entities.find((e) => e.identifier.entityType === 'SecureDonations::Project')?.attributes).toEqual({});
+    });
+
     it('HU-11: el principal enviado a AVP solo lleva el atributo sub (sin isMfaVerified)', async () => {
       mockSend.mockResolvedValueOnce({ decision: 'ALLOW' });
       await authorizeActionService(user, 'ReadAuditLogs');

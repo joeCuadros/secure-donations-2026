@@ -8,7 +8,7 @@ import { getProjectService } from './services/get-project.service.js';
 import { getProjectStatsService } from './services/stats-project.service.js';
 import { createProjectService } from './services/create-project.service.js';
 import { publishProjectService } from './services/publish-project.service.js';
-import { createAuditLogService } from '../audit/services/create-audit.service.js';
+import { withAuditedAccessLog } from '../audit/audited-handler.js';
 
 const createProjectSchema = z.object({
   title: z.string().min(3).max(150),
@@ -36,38 +36,27 @@ export const getProjectStatsHandler = withAccessLog('getProjectStats', async (ev
   return buildSuccessResponse(200, result);
 });
 
-export const createProjectHandler = withAccessLog('createProject', async (event) => {
-  const requestId = event.requestContext.requestId;
-  const user = extractAndVerifyContext(event, 'api/projects.write');
-  const body = createProjectSchema.parse(parseJsonBody(event));
-  const result = await createProjectService(body, user);
+export const createProjectHandler = withAuditedAccessLog(
+  'createProject',
+  { eventType: 'PROJECT_EVENT', action: 'CREATE_PROJECT', recordSuccess: true },
+  async (event, audit) => {
+    const user = extractAndVerifyContext(event, 'api/projects.write');
+    const body = createProjectSchema.parse(parseJsonBody(event));
+    const result = await createProjectService(body, user);
 
-  await createAuditLogService({
-    eventType: 'PROJECT_EVENT',
-    requestId,
-    actorSub: user.sub,
-    action: 'CREATE_PROJECT',
-    resourceRef: result.projectId,
-    outcome: 'SUCCESS',
-  });
+    audit.resourceRef = result.projectId;
+    return buildSuccessResponse(201, result);
+  }
+);
 
-  return buildSuccessResponse(201, result);
-});
+export const publishProjectHandler = withAuditedAccessLog(
+  'publishProject',
+  { eventType: 'PROJECT_EVENT', action: 'PUBLISH_PROJECT', recordSuccess: true, pathParam: 'projectId' },
+  async (event) => {
+    const user = extractAndVerifyContext(event, 'api/projects.write');
+    const projectId = event.pathParameters?.projectId!;
+    const result = await publishProjectService(projectId, user);
 
-export const publishProjectHandler = withAccessLog('publishProject', async (event) => {
-  const requestId = event.requestContext.requestId;
-  const user = extractAndVerifyContext(event, 'api/projects.write');
-  const projectId = event.pathParameters?.projectId!;
-  const result = await publishProjectService(projectId, user);
-
-  await createAuditLogService({
-    eventType: 'PROJECT_EVENT',
-    requestId,
-    actorSub: user.sub,
-    action: 'PUBLISH_PROJECT',
-    resourceRef: projectId,
-    outcome: 'SUCCESS',
-  });
-
-  return buildSuccessResponse(200, result);
-});
+    return buildSuccessResponse(200, result);
+  }
+);
