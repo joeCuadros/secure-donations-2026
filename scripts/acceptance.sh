@@ -475,7 +475,7 @@ T13 (CA-03.4) - Token revocado aceptado hasta expirar.
   5. Repita pasados 15 minutos: se espera 401. Registre las horas UTC de cada llamada.
 
 T14 (CA-11.2) - GESTOR sin segundo factor no obtiene tokens.
-  1. Con un GESTOR que ya tiene TOTP preferido (scripts/create-test-users.sh --enforce-mfa <correo>), abra la
+  1. Con un GESTOR que ya registro su autenticador (el pool exige MFA TOTP a todos los usuarios), abra la
      interfaz alojada de Cognito, ingrese correo y contrasena y NO ingrese el codigo TOTP.
   2. Compruebe que Cognito no redirige a la URL de retorno con un `code` y que no se emiten tokens.
   3. Capture la pantalla del desafio de codigo (sin datos personales) y guardela en evidence/.
