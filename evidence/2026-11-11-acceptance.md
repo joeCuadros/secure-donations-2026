@@ -118,5 +118,12 @@ registro de acceso de API Gateway (`/aws/vendedlogs/secure-donations/academic/ht
 20:57:35  PATCH /v1/projects/{projectId}/publish    200   (publicación desde «Borradores»)
 ```
 
-Pendiente: la comprobación automática T03b de `scripts/acceptance.sh` (403 para DONANTE en ese
-endpoint) no se ha ejecutado todavía contra el despliegue.
+## Tercera ejecución, con la gestión de borradores
+
+`scripts/acceptance.sh` ejecutado tras desplegar `GET /v1/projects/drafts`: **12 PASS, 0 FAIL,
+3 SKIPPED** (T10, T13 y T14 son manuales). Las once comprobaciones anteriores se mantienen y se
+suma la nueva:
+
+| ID | Estado | Trazabilidad | Resultado observado |
+|---|---|---|---|
+| T03b | PASS | CA-04.1, CA-08.2 | 403 para DONANTE; 200 para GESTOR; el borrador `prj_8d5da7aa18d7` aparece antes de publicarse y la respuesta no contiene `createdBy` |
