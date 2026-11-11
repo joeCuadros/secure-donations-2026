@@ -18,13 +18,11 @@ export const authorizeActionService = async (
 
   const entities: EntityItem[] = [];
 
-  // Mapeo de grupos como entidades padre
   const groupEntities = user.groups.map((group) => ({
     identifier: { entityType: 'SecureDonations::UserGroup', entityId: group },
   }));
   entities.push(...groupEntities);
 
-  // Entidad del solicitante (Principal)
   entities.push({
     identifier: { entityType: 'SecureDonations::User', entityId: user.sub },
     parents: groupEntities.map((g) => g.identifier!),
@@ -34,7 +32,6 @@ export const authorizeActionService = async (
     },
   });
 
-  // Entidad del recurso de destino
   let resource;
   if (resourceType && resourceId) {
     resource = { entityType: `SecureDonations::${resourceType}`, entityId: resourceId };
@@ -61,7 +58,7 @@ export const authorizeActionService = async (
   try {
     const response = await avpClient.send(command);
     if (response.decision !== 'ALLOW') {
-      throw AppError.forbidden(`Acceso denegado (Zero Trust PE): Operación no permitida por las reglas de negocio.`);
+      throw AppError.forbidden(`Acceso denegado (Zero Trust PE): Operación no permitida.`);
     }
   } catch (error) {
     if (error instanceof AppError) throw error;

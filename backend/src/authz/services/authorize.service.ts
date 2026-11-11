@@ -29,7 +29,7 @@ export const extractUserContext = (event: APIGatewayProxyEventV2): Authenticated
   if (typeof rawScope === 'string') scopes = rawScope.split(' ').filter(Boolean);
   else if (Array.isArray(rawScope)) scopes = rawScope.map(String);
 
-  // Verificación de Autenticación Multifactorial (MFA) a través del claim amr
+  // Verificación MFA desde el claim 'amr'
   const amr = claims['amr'] || claims['cognito:amr'] || [];
   const amrArray = Array.isArray(amr) ? amr : typeof amr === 'string' ? amr.split(',') : [];
   const isMfaVerified = amrArray.some((val: string) => val.toLowerCase().includes('mfa'));

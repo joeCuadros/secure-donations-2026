@@ -24,7 +24,6 @@ export const simulateDonationService = async (
     throw AppError.notFound('Donación no encontrada.');
   }
 
-  // Aserción de autorización externa (Cedar) - Reemplaza aserción de propiedad local
   await authorizeActionService(user, 'SimulateDonation', 'Donation', donationId, {
     donorSub: donation.donorSub,
     status: donation.status

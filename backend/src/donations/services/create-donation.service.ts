@@ -33,7 +33,6 @@ export const createDonationService = async (
 
   const project = await getProjectService(projectId);
   
-  // Aserción de autorización externa (Cedar): Valida grupo DONANTE y status PUBLICADO
   await authorizeActionService(user, 'CreateDonation', 'Project', projectId, { status: project.status });
 
   const now = new Date().toISOString();

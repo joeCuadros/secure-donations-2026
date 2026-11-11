@@ -9,8 +9,6 @@ export const listAuditLogsHandler = async (event: APIGatewayProxyEventV2): Promi
   const requestId = event.requestContext.requestId;
   try {
     const user = extractAndVerifyContext(event, 'api/audit.read');
-    
-    // Delegación estricta de autorización para listados según requerimiento MFA en Cedar
     await authorizeActionService(user, 'ReadAuditLogs');
 
     const eventType = event.queryStringParameters?.eventType;

@@ -10,7 +10,6 @@ export const createProjectService = async (
   input: CreateProjectDTO,
   user: AuthenticatedUser
 ): Promise<ProjectItem> => {
-  // Aserción de autorización externa (Cedar): Valida permiso base para GESTOR
   await authorizeActionService(user, 'CreateProject');
 
   const now = new Date().toISOString();

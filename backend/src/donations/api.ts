@@ -22,13 +22,10 @@ export const createDonationHandler = async (event: APIGatewayProxyEventV2): Prom
   const requestId = event.requestContext.requestId;
   try {
     const user = extractAndVerifyContext(event, 'api/donations.write');
-
     const rawHeader = event.headers?.['idempotency-key'] || event.headers?.['Idempotency-Key'];
     const idempotencyKey = uuidSchema.parse(rawHeader);
-
     const body = createDonationSchema.parse(JSON.parse(event.body || '{}'));
 
-    // Se pasa el objeto user completo para la evaluación de AVP en el servicio
     const res = await createDonationService(body.projectId, body.amountCents, idempotencyKey, user);
 
     await createAuditLogService({

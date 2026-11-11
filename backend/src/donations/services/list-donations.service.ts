@@ -7,7 +7,6 @@ import { authorizeActionService } from '../../authz/services/avp.service.js';
 import type { AuthenticatedUser } from '../../authz/types.js';
 
 export const listMyDonationsService = async (user: AuthenticatedUser, limit: number = 20, nextToken?: string) => {
-  // Aserción de autorización externa (Cedar): Valida pertenencia de los datos
   await authorizeActionService(user, 'ReadMyDonations', 'Donation', 'ListResource', { donorSub: user.sub });
 
   const result = await docClient.send(
