@@ -72,10 +72,11 @@ Resources:
       # Sin registro abierto: solo un administrador crea usuarios de prueba (CA-NF10.1).
       AdminCreateUserConfig:
         AllowAdminCreateUserOnly: true
-      # El segundo factor (TOTP) de GESTOR y AUDITOR se exige desde Cognito, que actua como
-      # Policy Administrator: cada usuario privilegiado tiene configurada su preferencia de MFA TOTP.
-      # Sin MFA por SMS (CA-11.1).
-      MfaConfiguration: OPTIONAL
+      # MFA TOTP obligatorio para todos los usuarios: Cognito, como Policy Administrator, no emite
+      # tokens sin segundo factor y guia el registro del autenticador en el primer inicio de sesion.
+      # Es mas estricto que el minimo exigido (GESTOR y AUDITOR, CA-11.1): con MFA opcional el login
+      # administrado no ofrece registrar TOTP. Sin MFA por SMS. Las comillas evitan que YAML lea un booleano.
+      MfaConfiguration: "ON"
       EnabledMfas:
         - SOFTWARE_TOKEN_MFA
       Policies:

@@ -155,17 +155,14 @@ bash scripts/create-test-users.sh \
   --manager <correo-gestor> --auditor <correo-auditor>
 ```
 
-**MFA TOTP para GESTOR y AUDITOR (CA-11.1).** El user pool tiene MFA opcional con TOTP (sin SMS), por lo que el
-segundo factor se exige por usuario: el usuario registra una aplicación autenticadora y después se activa como
-factor preferido con
+**MFA TOTP obligatorio (CA-11.1).** El user pool tiene `MfaConfiguration: "ON"` con TOTP y sin SMS. En el primer
+inicio de sesión, el login administrado de Cognito pide cambiar la contraseña temporal, muestra el código QR para
+registrar una aplicación autenticadora y verifica el primer código; sin segundo factor no se emiten tokens.
 
-```bash
-bash scripts/create-test-users.sh --enforce-mfa <correo-gestor>
-```
-
-Hasta que ese paso se ejecute, un usuario privilegiado puede iniciar sesión solo con contraseña. El script imprime los
-pasos completos y la alternativa por API si la interfaz alojada no ofrece el registro de TOTP. La evidencia de
-CA-11.2 es la prueba T14.
+Esto es más estricto que la matriz de `requirements.md`, que exige MFA solo a GESTOR y AUDITOR y lo deja opcional
+para DONANTE. Se eligió así porque, con MFA opcional, el login administrado no ofrece registrar TOTP y un usuario
+privilegiado podría entrar solo con contraseña. La desviación debe constar en el informe. La evidencia de CA-11.2 es
+la prueba T14. El modo `--enforce-mfa` del script ya no es necesario.
 
 ## Pruebas
 
@@ -254,8 +251,8 @@ no debe presentarse como superada.
 - El JWT authorizer no consulta revocaciones: un access token revocado se acepta hasta expirar (≤ 15 min).
 - No hay verificación de postura del dispositivo, evaluación continua de riesgo ni ZTNA.
 - HTTP API no se integra con AWS WAF; no hay WAF delante de CloudFront.
-- El MFA de GESTOR y AUDITOR se exige en Cognito por la preferencia TOTP de cada usuario; el access token no incluye
-  el claim `amr`, por lo que la política Cedar de auditoría no comprueba MFA.
+- El MFA se exige en Cognito para todos los usuarios (`MfaConfiguration: "ON"`); el access token no incluye el claim
+  `amr`, por lo que la política Cedar de auditoría no comprueba MFA.
 - La política de Verified Permissions se ejecuta con la validación de esquema desactivada (`Mode: "OFF"`).
 - Los permisos de logs de Lambda vienen del rol administrado `AWSLambdaBasicExecutionRole`.
 
