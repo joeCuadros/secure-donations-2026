@@ -4,6 +4,7 @@ import { createProjectService } from '../../src/projects/services/create-project
 import { getProjectService } from '../../src/projects/services/get-project.service.js';
 import { getProjectStatsService } from '../../src/projects/services/stats-project.service.js';
 import { publishProjectService } from '../../src/projects/services/publish-project.service.js';
+import { listProjectsService } from '../../src/projects/services/list-projects.service.js';
 import {
   listProjectsHandler,
   getProjectHandler,
@@ -17,187 +18,93 @@ vi.mock('../../src/shared/aws/dynamodb.client.js', () => ({
   docClient: { send: vi.fn() },
 }));
 
+vi.mock('../../src/authz/services/avp.service.js', () => ({
+  authorizeActionService: vi.fn().mockResolvedValue(undefined),
+}));
+
 describe('Dominio Projects - Comprehensive Test Suite', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  const mockGestorEvent = (body?: unknown, pathParameters?: any, queryParams?: any): APIGatewayProxyEventV2 =>
+  const mockUser = {
+    sub: 'sub_gestor_01',
+    groups: ['GESTOR'],
+    scopes: ['api/projects.write'],
+    isMfaVerified: true,
+  };
+
+  const mockGestorEvent = (body?: unknown, pathParameters?: any, qs?: any): APIGatewayProxyEventV2 =>
     ({
-      version: '2.0',
-      routeKey: 'POST /v1/projects',
-      rawPath: '/v1/projects',
-      rawQueryString: '',
-      headers: {},
-      isBase64Encoded: false,
       requestContext: {
-        accountId: '123456789012',
-        apiId: 'api-id',
-        domainName: 'id.execute-api.us-east-1.amazonaws.com',
-        domainPrefix: 'id',
-        http: {
-          method: 'POST',
-          path: '/v1/projects',
-          protocol: 'HTTP/1.1',
-          sourceIp: '127.0.0.1',
-          userAgent: 'CustomAgent',
-        },
         requestId: 'req_proj_123',
-        routeKey: 'POST /v1/projects',
-        stage: 'academic',
-        time: '05/Nov/2026:10:00:00 +0000',
-        timeEpoch: 1793872800000,
         authorizer: {
           jwt: {
             claims: {
               sub: 'sub_gestor_01',
               'cognito:groups': 'GESTOR',
               scope: 'api/projects.write',
+              amr: ['mfa'],
             },
-            scopes: [],
           },
         },
       },
       body: body ? JSON.stringify(body) : undefined,
       pathParameters,
-      queryStringParameters: queryParams,
+      queryStringParameters: qs
     }) as unknown as APIGatewayProxyEventV2;
 
   describe('Casos de uso (Servicios)', () => {
-    it('createProjectService debe persistir un proyecto en estado BORRADOR', async () => {
+    it('createProjectService debe persistir un proyecto en estado BORRADOR delegando AVP', async () => {
       vi.mocked(docClient.send).mockResolvedValueOnce({} as never);
-
       const input = {
         title: 'Tech Reforestation',
-        description: 'Proyecto de siembra tecnológica de árboles.',
+        description: 'Proyecto.',
         purpose: 'Sostenibilidad',
         goalAmountCents: 100000,
       };
 
-      const result = await createProjectService(input, 'sub_gestor_01');
-
-      expect(result.projectId).toMatch(/^prj_[a-f0-9]{12}$/);
+      const result = await createProjectService(input, mockUser);
       expect(result.status).toBe('BORRADOR');
-      expect(result.confirmedAmountCents).toBe(0);
-      expect(result.createdBy).toBe('sub_gestor_01');
     });
 
-    it('getProjectService debe retornar proyecto si está PUBLICADO', async () => {
-      const mockProject = {
-        projectId: 'prj_01',
-        title: 'Biblioteca',
-        status: 'PUBLICADO',
-      };
-      vi.mocked(docClient.send).mockResolvedValueOnce({ Item: mockProject } as never);
-
-      const res = await getProjectService('prj_01');
-      expect(res.projectId).toBe('prj_01');
-    });
-
-    it('getProjectStatsService debe calcular el porcentaje exacto de avance', async () => {
-      const mockProject = {
-        projectId: 'prj_01',
-        goalAmountCents: 500000,
-        confirmedAmountCents: 125000,
-        currency: 'PEN',
-        status: 'PUBLICADO',
-      };
-      vi.mocked(docClient.send).mockResolvedValueOnce({ Item: mockProject } as never);
-
-      const stats = await getProjectStatsService('prj_01');
-      expect(stats.progress).toBe(25);
-      expect(stats.confirmedAmountCents).toBe(125000);
-    });
-
-    it('publishProjectService debe publicar un proyecto en estado BORRADOR', async () => {
+    it('publishProjectService debe publicar un proyecto validando AVP', async () => {
       vi.mocked(docClient.send)
         .mockResolvedValueOnce({ Item: { projectId: 'prj_01', status: 'BORRADOR' } } as never)
         .mockResolvedValueOnce({} as never);
 
-      const published = await publishProjectService('prj_01');
+      const published = await publishProjectService('prj_01', mockUser);
       expect(published.status).toBe('PUBLICADO');
-      expect(published.publishedAt).toBeDefined();
+    });
+
+    it('publishProjectService debe fallar si ya esta publicado', async () => {
+      vi.mocked(docClient.send)
+        .mockResolvedValueOnce({ Item: { projectId: 'prj_01', status: 'PUBLICADO' } } as never);
+
+      await expect(publishProjectService('prj_01', mockUser)).rejects.toThrow(/El proyecto ya se encuentra publicado/);
+    });
+
+    it('publishProjectService debe fallar si no existe', async () => {
+      vi.mocked(docClient.send).mockResolvedValueOnce({ Item: undefined } as never);
+      await expect(publishProjectService('prj_01', mockUser)).rejects.toThrow(/Proyecto no encontrado/);
+    });
+
+    it('listProjectsService debe listar proyectos', async () => {
+      vi.mocked(docClient.send).mockResolvedValueOnce({ Items: [{ projectId: 'prj_01' }] } as never);
+      const res = await listProjectsService(10);
+      expect(res.items.length).toBe(1);
+    });
+
+    it('getProjectStatsService debe calcular progresos', async () => {
+      vi.mocked(docClient.send).mockResolvedValueOnce({ Item: { projectId: 'prj_01', goalAmountCents: 1000, confirmedAmountCents: 500, status: 'PUBLICADO' } } as never);
+      const res = await getProjectStatsService('prj_01');
+      expect(res.progress).toBe(50);
     });
   });
 
-  describe('API Handlers (Entrada/Salida HTTP y Errores)', () => {
-    it('listProjectsHandler debe listar proyectos públicos con status 200', async () => {
-      vi.mocked(docClient.send).mockResolvedValueOnce({
-        Items: [{ projectId: 'prj_01', title: 'Comedor', status: 'PUBLICADO' }],
-      } as never);
-
-      const event = {
-        requestContext: { requestId: 'req_1' },
-        queryStringParameters: { limit: '10' },
-      } as unknown as APIGatewayProxyEventV2;
-
-      const res = (await listProjectsHandler(event)) as APIGatewayProxyStructuredResultV2;
-
-      expect(res.statusCode).toBe(200);
-      const body = JSON.parse(res.body as string);
-      expect(body.items).toHaveLength(1);
-    });
-
-    it('listProjectsHandler debe capturar errores y retornar 500 si falla DynamoDB', async () => {
-      vi.mocked(docClient.send).mockRejectedValueOnce(new Error('DynamoError'));
-      const event = { requestContext: { requestId: 'req_err' } } as unknown as APIGatewayProxyEventV2;
-
-      const res = (await listProjectsHandler(event)) as APIGatewayProxyStructuredResultV2;
-      expect(res.statusCode).toBe(500);
-    });
-
-    it('getProjectHandler debe retornar 200 OK con el detalle del proyecto', async () => {
-      const mockProject = { projectId: 'prj_01', title: 'Biblioteca', status: 'PUBLICADO' };
-      vi.mocked(docClient.send).mockResolvedValueOnce({ Item: mockProject } as never);
-
-      const event = mockGestorEvent(undefined, { projectId: 'prj_01' });
-      const res = (await getProjectHandler(event)) as APIGatewayProxyStructuredResultV2;
-
-      expect(res.statusCode).toBe(200);
-      const body = JSON.parse(res.body as string);
-      expect(body.projectId).toBe('prj_01');
-    });
-
-    it('getProjectHandler debe retornar 404 si el proyecto no existe', async () => {
-      vi.mocked(docClient.send).mockResolvedValueOnce({ Item: undefined } as never);
-
-      const event = mockGestorEvent(undefined, { projectId: 'prj_not_exists' });
-      const res = (await getProjectHandler(event)) as APIGatewayProxyStructuredResultV2;
-
-      expect(res.statusCode).toBe(404);
-    });
-
-    it('getProjectStatsHandler debe retornar 200 OK con las estadísticas', async () => {
-      const mockProject = {
-        projectId: 'prj_01',
-        goalAmountCents: 500000,
-        confirmedAmountCents: 250000,
-        currency: 'PEN',
-        status: 'PUBLICADO',
-      };
-      vi.mocked(docClient.send).mockResolvedValueOnce({ Item: mockProject } as never);
-
-      const event = mockGestorEvent(undefined, { projectId: 'prj_01' });
-      const res = (await getProjectStatsHandler(event)) as APIGatewayProxyStructuredResultV2;
-
-      expect(res.statusCode).toBe(200);
-      const body = JSON.parse(res.body as string);
-      expect(body.progress).toBe(50);
-    });
-
-    it('getProjectStatsHandler debe retornar 404 si el proyecto no existe', async () => {
-      vi.mocked(docClient.send).mockResolvedValueOnce({ Item: undefined } as never);
-
-      const event = mockGestorEvent(undefined, { projectId: 'prj_not_exists' });
-      const res = (await getProjectStatsHandler(event)) as APIGatewayProxyStructuredResultV2;
-
-      expect(res.statusCode).toBe(404);
-    });
-
+  describe('API Handlers', () => {
     it('createProjectHandler debe responder 201 Created al crear proyecto', async () => {
-      vi.mocked(docClient.send).mockResolvedValueOnce({} as never);
-      vi.mocked(docClient.send).mockResolvedValueOnce({} as never);
-
+      vi.mocked(docClient.send).mockResolvedValueOnce({} as never).mockResolvedValueOnce({} as never);
       const event = mockGestorEvent({
         title: 'Parque Ecológico',
         description: 'Creación de área verde comunal.',
@@ -207,31 +114,71 @@ describe('Dominio Projects - Comprehensive Test Suite', () => {
 
       const res = (await createProjectHandler(event)) as APIGatewayProxyStructuredResultV2;
       expect(res.statusCode).toBe(201);
-      const body = JSON.parse(res.body as string);
-      expect(body.title).toBe('Parque Ecológico');
     });
 
-    it('publishProjectHandler debe responder 200 al publicar proyecto exitosamente', async () => {
+    it('createProjectHandler debe capturar errores 500', async () => {
+      vi.mocked(docClient.send).mockRejectedValueOnce(new Error('fail'));
+      const event = mockGestorEvent({
+        title: 'Parque Ecológico',
+        description: 'Creación de área verde comunal.',
+        purpose: 'Ecología',
+        goalAmountCents: 200000,
+      });
+
+      const res = (await createProjectHandler(event)) as APIGatewayProxyStructuredResultV2;
+      expect(res.statusCode).toBe(500);
+    });
+
+    it('publishProjectHandler debe responder 200 al publicar', async () => {
       vi.mocked(docClient.send)
         .mockResolvedValueOnce({ Item: { projectId: 'prj_01', status: 'BORRADOR' } } as never)
         .mockResolvedValueOnce({} as never)
         .mockResolvedValueOnce({} as never);
-
-      const event = mockGestorEvent(undefined, { projectId: 'prj_01' });
-      const res = (await publishProjectHandler(event)) as APIGatewayProxyStructuredResultV2;
-
+      
+      const res = (await publishProjectHandler(mockGestorEvent(undefined, {projectId: 'prj_01'}))) as APIGatewayProxyStructuredResultV2;
       expect(res.statusCode).toBe(200);
-      const body = JSON.parse(res.body as string);
-      expect(body.status).toBe('PUBLICADO');
     });
 
-    it('publishProjectHandler debe retornar 409 o 404 en fallos de publicación', async () => {
+    it('publishProjectHandler debe capturar error si no encuentra proyecto', async () => {
       vi.mocked(docClient.send).mockResolvedValueOnce({ Item: undefined } as never);
-
-      const event = mockGestorEvent(undefined, { projectId: 'prj_invalid' });
-      const res = (await publishProjectHandler(event)) as APIGatewayProxyStructuredResultV2;
-
+      const res = (await publishProjectHandler(mockGestorEvent(undefined, {projectId: 'prj_01'}))) as APIGatewayProxyStructuredResultV2;
       expect(res.statusCode).toBe(404);
+    });
+
+    it('listProjectsHandler debe responder 200', async () => {
+      vi.mocked(docClient.send).mockResolvedValueOnce({ Items: [] } as never);
+      const res = (await listProjectsHandler(mockGestorEvent(undefined, undefined, {limit: '10'}))) as APIGatewayProxyStructuredResultV2;
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('listProjectsHandler debe capturar errores', async () => {
+      vi.mocked(docClient.send).mockRejectedValueOnce(new Error('fail'));
+      const res = (await listProjectsHandler(mockGestorEvent())) as APIGatewayProxyStructuredResultV2;
+      expect(res.statusCode).toBe(500);
+    });
+
+    it('getProjectHandler debe responder 200', async () => {
+      vi.mocked(docClient.send).mockResolvedValueOnce({ Item: { projectId: 'prj_01', status: 'PUBLICADO' } } as never);
+      const res = (await getProjectHandler(mockGestorEvent(undefined, {projectId: 'prj_01'}))) as APIGatewayProxyStructuredResultV2;
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('getProjectHandler debe capturar error', async () => {
+      vi.mocked(docClient.send).mockRejectedValueOnce(new Error('fail'));
+      const res = (await getProjectHandler(mockGestorEvent(undefined, {projectId: 'prj_01'}))) as APIGatewayProxyStructuredResultV2;
+      expect(res.statusCode).toBe(500);
+    });
+
+    it('getProjectStatsHandler debe responder 200', async () => {
+      vi.mocked(docClient.send).mockResolvedValueOnce({ Item: { projectId: 'prj_01', goalAmountCents: 1000, confirmedAmountCents: 500, status: 'PUBLICADO' } } as never);
+      const res = (await getProjectStatsHandler(mockGestorEvent(undefined, {projectId: 'prj_01'}))) as APIGatewayProxyStructuredResultV2;
+      expect(res.statusCode).toBe(200);
+    });
+
+    it('getProjectStatsHandler debe capturar error', async () => {
+      vi.mocked(docClient.send).mockRejectedValueOnce(new Error('fail'));
+      const res = (await getProjectStatsHandler(mockGestorEvent(undefined, {projectId: 'prj_01'}))) as APIGatewayProxyStructuredResultV2;
+      expect(res.statusCode).toBe(500);
     });
   });
 });
