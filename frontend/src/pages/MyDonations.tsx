@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader, ReceiptText, Play } from "lucide-react";
 import { donationsApi } from "../services/donations/api";
 import type { Donation, DonationStatus } from "../services/donations/types";
+import { SimulationBanner } from "../components/SimulationBanner";
 import { useToast } from "../utils/ToastContext";
 
 const formatMoney = (amountCents: number) =>
@@ -70,6 +71,8 @@ export const MyDonations = () => {
   }, [toast]);
 
   useEffect(() => {
+    // Carga inicial de datos: la actualización de estado ocurre tras esperar la respuesta de la API.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchDonations();
   }, [fetchDonations]);
 
@@ -105,9 +108,9 @@ export const MyDonations = () => {
         </p>
       </div>
 
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800">
-        <strong>Simulación académica:</strong> no se ha realizado ningún cobro. Utiliza el botón de simulación para confirmar tu intención de donación en el sistema.
-      </div>
+      <SimulationBanner>
+        Utiliza el botón de simulación para confirmar tu intención de donación en el sistema.
+      </SimulationBanner>
 
       {loading ? (
         <div className="flex justify-center py-16" role="status" aria-live="polite">

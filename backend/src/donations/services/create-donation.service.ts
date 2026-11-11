@@ -3,7 +3,8 @@ import { docClient } from '../../shared/aws/dynamodb.client.js';
 import { env } from '../../shared/config/env.js';
 import type { DonationItem, IdempotencyRecordItem } from '../types.js';
 import { AppError } from '../../shared/errors/app-error.js';
-import { getProjectService } from '../../projects/services/get-project.service.js';
+import { findProjectService } from '../../projects/services/get-project.service.js';
+import { isConditionalWriteConflict } from '../../shared/errors/dynamo-errors.js';
 import { authorizeActionService } from '../../authz/services/avp.service.js';
 import type { AuthenticatedUser } from '../../authz/types.js';
 import { createHash, randomUUID } from 'node:crypto';
@@ -31,8 +32,13 @@ export const createDonationService = async (
     throw AppError.conflict('La clave de idempotencia ya fue utilizada con otro payload.');
   }
 
-  const project = await getProjectService(projectId);
-  
+  // CA-05.2: proyecto inexistente -> 404; proyecto existente pero no publicado -> 409.
+  const project = await findProjectService(projectId);
+  if (!project) throw AppError.notFound('El proyecto no existe.');
+  if (project.status !== 'PUBLICADO') {
+    throw AppError.conflict('El proyecto no se encuentra publicado y no admite donaciones.');
+  }
+
   await authorizeActionService(user, 'CreateDonation', 'Project', projectId, { status: project.status });
 
   const now = new Date().toISOString();
@@ -81,8 +87,8 @@ export const createDonationService = async (
         ],
       })
     );
-  } catch (error: any) {
-    if (error?.name === 'TransactionCanceledException') {
+  } catch (error: unknown) {
+    if (isConditionalWriteConflict(error)) {
       throw AppError.conflict('Conflicto de idempotencia al procesar la solicitud.');
     }
     throw error;

@@ -1,25 +1,30 @@
-import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import { z } from 'zod';
 import { extractAndVerifyContext } from '../authz/api.js';
 import { authorizeActionService } from '../authz/services/avp.service.js';
 import { buildSuccessResponse } from '../shared/utils/response.js';
-import { handleError } from '../shared/errors/error-handler.js';
+import { withAccessLog } from '../shared/logger/access-log.js';
+import { DEFAULT_PAGE_SIZE, isoDateSchema, paginationQuerySchema } from '../shared/schemas/common.schema.js';
 import { listAuditLogsService } from './services/list-audit.service.js';
 
-export const listAuditLogsHandler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
-  const requestId = event.requestContext.requestId;
-  try {
-    const user = extractAndVerifyContext(event, 'api/audit.read');
-    await authorizeActionService(user, 'ReadAuditLogs');
+const auditQuerySchema = paginationQuerySchema
+  .extend({
+    eventType: z.string().min(1).max(64).optional(),
+    from: isoDateSchema.optional(),
+    to: isoDateSchema.optional(),
+  })
+  .refine((query) => !query.from || !query.to || query.from <= query.to, {
+    message: 'from no puede ser posterior a to',
+    path: ['from'],
+  });
 
-    const eventType = event.queryStringParameters?.eventType;
-    const from = event.queryStringParameters?.from;
-    const to = event.queryStringParameters?.to;
-    const limit = event.queryStringParameters?.limit ? parseInt(event.queryStringParameters.limit, 10) : 20;
-    const nextToken = event.queryStringParameters?.nextToken;
+export const listAuditLogsHandler = withAccessLog('listAuditLogs', async (event) => {
+  const user = extractAndVerifyContext(event, 'api/audit.read');
+  await authorizeActionService(user, 'ReadAuditLogs');
 
-    const result = await listAuditLogsService(eventType, from, to, limit, nextToken);
-    return buildSuccessResponse(200, result);
-  } catch (error) {
-    return handleError(error, requestId);
-  }
-};
+  const { eventType, from, to, limit = DEFAULT_PAGE_SIZE, nextToken } = auditQuerySchema.parse(
+    event.queryStringParameters ?? {}
+  );
+
+  const result = await listAuditLogsService(eventType, from, to, limit, nextToken);
+  return buildSuccessResponse(200, result);
+});

@@ -4,5 +4,4 @@ export interface AuthenticatedUser {
   groups: string[];
   scopes: string[];
   username?: string;
-  isMfaVerified: boolean;
 }

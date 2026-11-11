@@ -1,6 +1,7 @@
 import { VerifiedPermissionsClient, IsAuthorizedCommand, type EntityItem } from '@aws-sdk/client-verifiedpermissions';
 import { env } from '../../shared/config/env.js';
 import { AppError } from '../../shared/errors/app-error.js';
+import { logger } from '../../shared/logger/logger.js';
 import type { AuthenticatedUser } from '../types.js';
 
 const avpClient = new VerifiedPermissionsClient({ region: env.AWS_REGION });
@@ -28,7 +29,6 @@ export const authorizeActionService = async (
     parents: groupEntities.map((g) => g.identifier!),
     attributes: {
       sub: { string: user.sub },
-      isMfaVerified: { boolean: user.isMfaVerified },
     },
   });
 
@@ -62,6 +62,11 @@ export const authorizeActionService = async (
     }
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw AppError.internal(`Error en el motor de políticas (AVP): ${String(error)}`);
+    // Falla cerrada: el detalle del SDK solo se registra en el servidor y no llega al cliente.
+    logger.error('Error al consultar Amazon Verified Permissions', {
+      action: actionId,
+      error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    });
+    throw AppError.internal();
   }
 };

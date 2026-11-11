@@ -8,7 +8,6 @@ const envSchema = z.object({
   DONATIONS_TABLE: z.string().default('Donations-local'),
   IDEMPOTENCY_TABLE: z.string().default('Idempotency-local'),
   AUDIT_TABLE: z.string().default('AuditEvents-local'),
-  S3_BUCKET: z.string().optional().default('secure-donations-assets'),
   COGNITO_USER_POOL_ID: z.string().optional().default('us-east-1_dummy'),
   COGNITO_CLIENT_ID: z.string().optional().default('dummy_client_id'),
   AVP_POLICY_STORE_ID: z.string().optional(),

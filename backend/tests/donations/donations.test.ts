@@ -24,7 +24,6 @@ describe('Dominio Donations - Comprehensive Test Suite', () => {
     sub: 'sub_donor_777',
     groups: ['DONANTE'],
     scopes: ['api/donations.write', 'api/donations.read'],
-    isMfaVerified: false,
   };
 
   const mockDonorEvent = (body?: unknown, pathParams?: any, headers?: Record<string, string>, qs?: any): APIGatewayProxyEventV2 =>
@@ -195,6 +194,208 @@ describe('Dominio Donations - Comprehensive Test Suite', () => {
       const event = mockDonorEvent({ result: 'INVALID' }, { donationId: 'don_100' });
       const res = (await simulateDonationHandler(event)) as APIGatewayProxyStructuredResultV2;
       expect(res.statusCode).toBe(400);
+    });
+  });
+
+  describe('Validación de entrada (T04, CA-05.2)', () => {
+    it.each([0, 99, 100001, 12.5, -5, '2500'])('T04 / CA-05.2: amountCents=%j responde 400 y no escribe', async (amountCents) => {
+      const res = (await createDonationHandler(mockDonorEvent({ projectId: 'prj_01', amountCents }))) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(400);
+      expect(docClient.send).not.toHaveBeenCalled();
+    });
+
+    it('CA-05.2: la ausencia de Idempotency-Key responde 400', async () => {
+      const event = mockDonorEvent({ projectId: 'prj_01', amountCents: 2500 }, undefined, {});
+      const res = (await createDonationHandler(event)) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(400);
+      expect(docClient.send).not.toHaveBeenCalled();
+    });
+
+    it('CA-05.2: un Idempotency-Key que no es UUID responde 400', async () => {
+      const event = mockDonorEvent({ projectId: 'prj_01', amountCents: 2500 }, undefined, { 'idempotency-key': 'no-es-uuid' });
+      const res = (await createDonationHandler(event)) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(400);
+    });
+
+    it('CA-05.2: createDonationHandler responde 400 uniforme ante un JSON malformado (no 500)', async () => {
+      const event = { ...mockDonorEvent(), body: '{"projectId": "prj_01", "amountCents":' } as APIGatewayProxyEventV2;
+
+      const res = (await createDonationHandler(event)) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body as string)).toEqual({
+        code: 'VALIDATION_ERROR',
+        message: expect.any(String),
+        requestId: 'req_don_999',
+      });
+      expect(docClient.send).not.toHaveBeenCalled();
+    });
+
+    it('CA-06.1: simulateDonationHandler responde 400 uniforme ante un JSON malformado (no 500)', async () => {
+      const event = { ...mockDonorEvent(undefined, { donationId: 'don_100' }), body: 'result=CONFIRMADA_SIMULADA' } as APIGatewayProxyEventV2;
+
+      const res = (await simulateDonationHandler(event)) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(400);
+      expect(JSON.parse(res.body as string).code).toBe('VALIDATION_ERROR');
+      expect(docClient.send).not.toHaveBeenCalled();
+    });
+
+    it('CA-05.2: un cuerpo con base64 (isBase64Encoded) se decodifica antes de interpretarlo', async () => {
+      vi.mocked(docClient.send)
+        .mockResolvedValueOnce({ Item: undefined } as never)
+        .mockResolvedValueOnce({ Item: { projectId: 'prj_01', status: 'PUBLICADO' } } as never)
+        .mockResolvedValueOnce({} as never)
+        .mockResolvedValueOnce({} as never);
+      const body = Buffer.from(JSON.stringify({ projectId: 'prj_01', amountCents: 2000 })).toString('base64');
+      const event = { ...mockDonorEvent(), body, isBase64Encoded: true } as APIGatewayProxyEventV2;
+
+      const res = (await createDonationHandler(event)) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(201);
+    });
+
+    it('CA-05.3: el donorSub proviene del token y nunca del cuerpo de la solicitud', async () => {
+      vi.mocked(docClient.send).mockResolvedValue({} as never);
+      vi.mocked(docClient.send).mockResolvedValueOnce({ Item: undefined } as never);
+      vi.mocked(docClient.send).mockResolvedValueOnce({ Item: { projectId: 'prj_01', status: 'PUBLICADO' } } as never);
+
+      await createDonationHandler(mockDonorEvent({ projectId: 'prj_01', amountCents: 2000, donorSub: 'sub_intruso' }));
+
+      const transaction = vi.mocked(docClient.send).mock.calls
+        .map(([command]) => command as { constructor: { name: string }; input: any })
+        .find((command) => command.constructor.name === 'TransactWriteCommand');
+      const donationPut = transaction?.input.TransactItems.find((item: any) => item.Put.TableName === env.DONATIONS_TABLE);
+      expect(donationPut?.Put.Item.donorSub).toBe('sub_donor_777');
+    });
+
+    it.each(['0', '101', 'abc', '2.5'])('listMyDonationsHandler responde 400 si limit=%j no es un entero entre 1 y 100', async (limit) => {
+      const res = (await listMyDonationsHandler(mockDonorEvent(undefined, undefined, undefined, { limit }))) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(400);
+      expect(docClient.send).not.toHaveBeenCalled();
+    });
+
+    it('listMyDonationsHandler usa 20 como límite por defecto', async () => {
+      vi.mocked(docClient.send).mockResolvedValueOnce({ Items: [] } as never);
+
+      await listMyDonationsHandler(mockDonorEvent());
+
+      const query = vi.mocked(docClient.send).mock.calls[0]![0] as unknown as { input: { Limit: number } };
+      expect(query.input.Limit).toBe(20);
+    });
+  });
+
+  describe('Proyecto inexistente o en BORRADOR al donar (CA-05.2)', () => {
+    it('CA-05.2: un proyecto inexistente responde 404 y no escribe donación ni clave de idempotencia', async () => {
+      vi.mocked(docClient.send)
+        .mockResolvedValueOnce({ Item: undefined } as never) // idempotencia
+        .mockResolvedValueOnce({ Item: undefined } as never); // proyecto
+
+      const res = (await createDonationHandler(mockDonorEvent({ projectId: 'prj_missing', amountCents: 2500 }))) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(404);
+      expect(docClient.send).toHaveBeenCalledTimes(2);
+    });
+
+    it('CA-05.2: un proyecto existente en BORRADOR responde 409 y no escribe donación ni clave de idempotencia', async () => {
+      vi.mocked(docClient.send)
+        .mockResolvedValueOnce({ Item: undefined } as never) // idempotencia
+        .mockResolvedValueOnce({ Item: { projectId: 'prj_draft', status: 'BORRADOR' } } as never); // proyecto
+
+      const res = (await createDonationHandler(mockDonorEvent({ projectId: 'prj_draft', amountCents: 2500 }))) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(409);
+      expect(JSON.parse(res.body as string).code).toBe('CONFLICT');
+      expect(docClient.send).toHaveBeenCalledTimes(2);
+    });
+
+    it('CA-05.2: createDonationService distingue 404 de 409 con el mismo estado de proyecto que oculta la API pública', async () => {
+      vi.mocked(docClient.send)
+        .mockResolvedValueOnce({ Item: undefined } as never)
+        .mockResolvedValueOnce({ Item: { projectId: 'prj_draft', status: 'BORRADOR' } } as never);
+
+      await expect(createDonationService('prj_draft', 2500, '550e8400-e29b-41d4-a716-446655440000', mockUser)).rejects.toMatchObject({ statusCode: 409 });
+    });
+  });
+
+  describe('Concurrencia en la simulación (T08, CA-06.2, CA-NF04.1)', () => {
+    const pendingDonation = {
+      donationId: 'don_100',
+      projectId: 'prj_01',
+      donorSub: 'sub_donor_777',
+      amountCents: 3000,
+      status: 'PENDIENTE_SIMULACION',
+    };
+
+    const commandName = (command: unknown): string => (command as { constructor: { name: string } }).constructor.name;
+
+    it('T08 / CA-06.2 / CA-NF04.1: 10 confirmaciones concurrentes dan un único 200 y nueve 409, sin 500', async () => {
+      let transactions = 0;
+      vi.mocked(docClient.send).mockImplementation((async (command: unknown) => {
+        const name = commandName(command);
+        if (name === 'GetCommand') return { Item: pendingDonation };
+        if (name === 'TransactWriteCommand') {
+          transactions += 1;
+          if (transactions > 1) {
+            throw Object.assign(new Error('Transaction cancelled'), { name: 'TransactionCanceledException' });
+          }
+        }
+        return {};
+      }) as never);
+
+      const event = mockDonorEvent({ result: 'CONFIRMADA_SIMULADA' }, { donationId: 'don_100' });
+      const responses = (await Promise.all(
+        Array.from({ length: 10 }, () => simulateDonationHandler(event))
+      )) as APIGatewayProxyStructuredResultV2[];
+
+      const statusCodes = responses.map((r) => r.statusCode).sort();
+      expect(statusCodes).toEqual([200, 409, 409, 409, 409, 409, 409, 409, 409, 409]);
+
+      const sent = vi.mocked(docClient.send).mock.calls.map(([command]) => commandName(command));
+      expect(sent.filter((n) => n === 'TransactWriteCommand')).toHaveLength(10);
+      expect(sent.filter((n) => n === 'PutCommand')).toHaveLength(1); // un único evento de auditoría
+    });
+
+    it('CA-06.2: TransactionConflictException (transacción en curso sobre el mismo ítem) también responde 409', async () => {
+      vi.mocked(docClient.send)
+        .mockResolvedValueOnce({ Item: pendingDonation } as never)
+        .mockRejectedValueOnce(Object.assign(new Error('conflict'), { name: 'TransactionConflictException' }) as never);
+
+      const res = (await simulateDonationHandler(mockDonorEvent({ result: 'CONFIRMADA_SIMULADA' }, { donationId: 'don_100' }))) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(409);
+      expect(JSON.parse(res.body as string).code).toBe('CONFLICT');
+    });
+
+    it('CA-06.2: un fallo de condición en simulateDonationService se traduce a conflicto de negocio', async () => {
+      vi.mocked(docClient.send)
+        .mockResolvedValueOnce({ Item: pendingDonation } as never)
+        .mockRejectedValueOnce(Object.assign(new Error('cancelled'), { name: 'TransactionCanceledException' }) as never);
+
+      await expect(simulateDonationService('don_100', 'RECHAZADA_SIMULADA', mockUser)).rejects.toMatchObject({ statusCode: 409 });
+    });
+
+    it('CA-06.2: errores distintos al conflicto siguen propagándose como 500', async () => {
+      vi.mocked(docClient.send)
+        .mockResolvedValueOnce({ Item: pendingDonation } as never)
+        .mockRejectedValueOnce(new Error('ProvisionedThroughputExceeded') as never);
+
+      const res = (await simulateDonationHandler(mockDonorEvent({ result: 'CONFIRMADA_SIMULADA' }, { donationId: 'don_100' }))) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(500);
+    });
+
+    it('CA-05.4: TransactionConflictException al crear la donación también responde 409', async () => {
+      vi.mocked(docClient.send)
+        .mockResolvedValueOnce({ Item: undefined } as never)
+        .mockResolvedValueOnce({ Item: { projectId: 'prj_01', status: 'PUBLICADO' } } as never)
+        .mockRejectedValueOnce(Object.assign(new Error('conflict'), { name: 'TransactionConflictException' }) as never);
+
+      await expect(createDonationService('prj_01', 2500, '550e8400-e29b-41d4-a716-446655440000', mockUser)).rejects.toMatchObject({ statusCode: 409 });
     });
   });
 });

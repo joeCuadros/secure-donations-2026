@@ -5,15 +5,20 @@ import { buildErrorResponse } from '../utils/response.js';
 import { logger } from '../logger/logger.js';
 import type { APIGatewayProxyResultV2 } from 'aws-lambda';
 
+export const getErrorCode = (error: unknown): ErrorCode => {
+  if (error instanceof AppError) return error.code;
+  if (error instanceof ZodError) return ErrorCode.VALIDATION_ERROR;
+  return ErrorCode.INTERNAL_ERROR;
+};
+
+// Los errores esperados (AppError, ZodError) quedan trazados en la línea de acceso del handler.
 export const handleError = (error: unknown, requestId: string): APIGatewayProxyResultV2 => {
   if (error instanceof AppError) {
-    logger.warn('AppError procesado', { code: error.code, statusCode: error.statusCode, message: error.message, requestId });
     return buildErrorResponse(error.statusCode, error.code, error.message, requestId);
   }
 
   if (error instanceof ZodError) {
     const message = error.issues.map((i) => i.message).join('; ');
-    logger.warn('Error de validación Zod', { message, requestId });
     return buildErrorResponse(400, ErrorCode.VALIDATION_ERROR, message, requestId);
   }
 

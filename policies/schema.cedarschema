@@ -1,23 +1,18 @@
 namespace SecureDonations {
   entity User in [UserGroup] {
     sub: String,
-    email: String,
-    isMfaVerified: Boolean
+    email?: String
   };
 
   entity UserGroup;
 
   entity Project {
-    projectId: String,
-    status: String,
-    createdBy: String
+    status?: String
   };
 
   entity Donation {
-    donationId: String,
     donorSub: String,
-    projectId: String,
-    status: String
+    status?: String
   };
 
   entity AuditLog;

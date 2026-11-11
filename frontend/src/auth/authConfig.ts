@@ -1,45 +1,33 @@
-import { type UserManagerSettings, WebStorageStateStore } from "oidc-client-ts";
+import { InMemoryWebStorage, type UserManagerSettings, WebStorageStateStore } from "oidc-client-ts";
+import { env } from "../config/env";
 
-const userPoolId = import.meta.env.VITE_COGNITO_USER_POOL_ID?.trim();
-const clientId = import.meta.env.VITE_COGNITO_CLIENT_ID?.trim();
-const region = userPoolId?.split("_")[0];
-const cognitoDomain = import.meta.env.VITE_COGNITO_DOMAIN?.trim();
-const logoutUri = import.meta.env.VITE_LOGOUT_URI?.trim() || `${window.location.origin}/login`;
+const cognitoBaseUrl = `https://${env.cognitoDomain}`;
 
-if (!userPoolId || !region || !clientId) {
-  throw new Error(
-    "Falta configurar VITE_COGNITO_USER_POOL_ID o VITE_COGNITO_CLIENT_ID en el archivo .env."
-  );
-}
-
-const requestedScopes = (
-  import.meta.env.VITE_COGNITO_SCOPES ||
-  "openid email profile api/projects.write api/donations.write api/donations.read api/audit.read"
-)
-  .trim()
-  .split(/\s+/)
-  .filter(Boolean)
-  .join(" ");
+// Cognito no usa los parámetros estándar de end_session: su endpoint /logout recibe client_id y logout_uri.
+export const buildCognitoLogoutUrl = (): string =>
+  `${cognitoBaseUrl}/logout?client_id=${encodeURIComponent(env.clientId)}&logout_uri=${encodeURIComponent(env.logoutUri)}`;
 
 export const oidcConfig: UserManagerSettings = {
-  authority: `https://cognito-idp.${region}.amazonaws.com/${userPoolId}`,
-  client_id: clientId,
-  redirect_uri: import.meta.env.VITE_REDIRECT_URI?.trim() || `${window.location.origin}/callback`,
-  post_logout_redirect_uri: logoutUri,
+  authority: `https://cognito-idp.${env.region}.amazonaws.com/${env.userPoolId}`,
+  client_id: env.clientId,
+  redirect_uri: env.redirectUri,
+  post_logout_redirect_uri: env.logoutUri,
   response_type: "code",
-  scope: requestedScopes,
+  scope: env.scopes,
   automaticSilentRenew: true,
   loadUserInfo: true,
   filterProtocolClaims: true,
   revokeTokensOnSignout: true,
-  userStore: new WebStorageStateStore({ store: window.sessionStorage }),
+  // CA-NF11.1: los tokens viven solo en memoria. Recargar la página exige iniciar sesión de nuevo.
+  userStore: new WebStorageStateStore({ store: new InMemoryWebStorage() }),
+  // El estado transitorio de PKCE debe sobrevivir a la redirección hacia Cognito, por eso usa sessionStorage.
   stateStore: new WebStorageStateStore({ store: window.sessionStorage }),
   metadata: {
-    issuer: `https://cognito-idp.${region}.amazonaws.com/${userPoolId}`,
-    authorization_endpoint: `https://${cognitoDomain}/oauth2/authorize`,
-    token_endpoint: `https://${cognitoDomain}/oauth2/token`,
-    userinfo_endpoint: `https://${cognitoDomain}/oauth2/userInfo`,
-    revocation_endpoint: `https://${cognitoDomain}/oauth2/revoke`,
-    end_session_endpoint: `https://${cognitoDomain}/logout?client_id=${clientId}&logout_uri=${encodeURIComponent(logoutUri)}`
-  }
+    issuer: `https://cognito-idp.${env.region}.amazonaws.com/${env.userPoolId}`,
+    authorization_endpoint: `${cognitoBaseUrl}/oauth2/authorize`,
+    token_endpoint: `${cognitoBaseUrl}/oauth2/token`,
+    userinfo_endpoint: `${cognitoBaseUrl}/oauth2/userInfo`,
+    revocation_endpoint: `${cognitoBaseUrl}/oauth2/revoke`,
+    end_session_endpoint: `${cognitoBaseUrl}/logout`,
+  },
 };

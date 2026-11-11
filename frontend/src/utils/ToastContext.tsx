@@ -23,6 +23,8 @@ interface ToastContextType {
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
+// El hook comparte archivo con el proveedor para mantener el contexto en un único módulo.
+// eslint-disable-next-line react-refresh/only-export-components
 export const useToast = () => {
   const context = useContext(ToastContext);
   if (!context) throw new Error("useToast debe utilizarse dentro de ToastProvider.");

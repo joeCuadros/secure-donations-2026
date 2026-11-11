@@ -35,6 +35,8 @@ export const Projects = () => {
   }, [toast]);
 
   useEffect(() => {
+    // Carga inicial de datos: la actualización de estado ocurre tras esperar la respuesta de la API.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchProjects();
   }, [fetchProjects]);
 

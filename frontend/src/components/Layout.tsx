@@ -2,6 +2,7 @@ import { Link, NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "react-oidc-context";
 import { LayoutDashboard, List, LogOut, Shield } from "lucide-react";
 import { hasPermission } from "../utils/permissions";
+import { logout } from "../auth/logout";
 
 const navItems = [
   { name: "Proyectos", path: "/", icon: LayoutDashboard, scope: undefined },
@@ -32,8 +33,7 @@ export const Layout = () => {
     if (auth.activeNavigator) return;
 
     try {
-      await auth.removeUser();
-      await auth.signoutRedirect();
+      await logout();
     } catch {
       window.location.replace("/login");
     }
