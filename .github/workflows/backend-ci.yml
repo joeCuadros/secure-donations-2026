@@ -1,0 +1,50 @@
+name: Backend CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'backend/**'
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Use Node.js 24.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24.x'
+        cache: 'npm'
+        cache-dependency-path: './backend/package-lock.json'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Check types
+      run: npm run typecheck
+
+    - name: Run Tests
+      run: npm run test:coverage
+      env:
+        NODE_ENV: test
+        AWS_REGION: us-east-1
+        STAGE: academic
+        PROJECTS_TABLE: Projects-test
+        DONATIONS_TABLE: Donations-test
+        IDEMPOTENCY_TABLE: Idempotency-test
+        AUDIT_TABLE: AuditEvents-test
+        LOG_LEVEL: info
+
+    - name: Build
+      run: npm run build

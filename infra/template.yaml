@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  Plataforma de Donaciones Seguras 2026 - Infraestructura Serverless AWS SAM (Stage Academic/Prod).
+  Plataforma de Donaciones Seguras 2026 - Infraestructura Serverless AWS SAM (Stage Academic/Prod) con Amazon Verified Permissions.
 
 Parameters:
   StageName:
@@ -32,7 +32,14 @@ Globals:
         AUDIT_TABLE: !Ref AuditEventsTable
         COGNITO_USER_POOL_ID: !Ref CognitoUserPool
         COGNITO_CLIENT_ID: !Ref CognitoUserPoolClient
+        AVP_POLICY_STORE_ID: !GetAtt PolicyStore.PolicyStoreId
         LOG_LEVEL: info
+    Policies:
+      - Statement:
+          - Effect: Allow
+            Action:
+              - verifiedpermissions:IsAuthorized
+            Resource: !GetAtt PolicyStore.Arn
 
 Resources:
   # ===================================================================
@@ -252,9 +259,8 @@ Resources:
             ProjectionType: ALL
 
   # ===================================================================
-  # 4. FUNCIONES LAMBDA (CodeUri directo a dist/)
+  # 4. FUNCIONES LAMBDA
   # ===================================================================
-
   ListProjectsFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -437,6 +443,41 @@ Resources:
               AuthorizationScopes:
                 - api/audit.read
 
+  # ===================================================================
+  # 5. AMAZON VERIFIED PERMISSIONS (ZERO TRUST POLICY ENGINE)
+  # ===================================================================
+  PolicyStore:
+    Type: AWS::VerifiedPermissions::PolicyStore
+    Properties:
+      ValidationSettings:
+        Mode: OFF
+
+  CoreAuthorizationPolicy:
+    Type: AWS::VerifiedPermissions::Policy
+    DependsOn: PolicyStore
+    Properties:
+      PolicyStoreId: !GetAtt PolicyStore.PolicyStoreId
+      Definition:
+        Static:
+          Statement: |
+            permit (
+              principal in SecureDonations::UserGroup::"AUDITOR",
+              action == SecureDonations::Action::"ReadAuditLogs",
+              resource
+            ) when { principal.isMfaVerified == true };
+            
+            permit (
+              principal in SecureDonations::UserGroup::"DONANTE",
+              action == SecureDonations::Action::"SimulateDonation",
+              resource
+            ) when { principal.sub == resource.donorSub };
+            
+            permit (
+              principal in SecureDonations::UserGroup::"DONANTE",
+              action == SecureDonations::Action::"ReadMyDonations",
+              resource
+            ) when { principal.sub == resource.donorSub };
+
 Outputs:
   HttpApiEndpoint:
     Description: URL Base para llamadas a la API
@@ -447,3 +488,6 @@ Outputs:
   CognitoUserPoolClientId:
     Description: COGNITO_CLIENT_ID para el .env
     Value: !Ref CognitoUserPoolClient
+  VerifiedPermissionsPolicyStoreId:
+    Description: AVP_POLICY_STORE_ID para el .env
+    Value: !GetAtt PolicyStore.PolicyStoreId
