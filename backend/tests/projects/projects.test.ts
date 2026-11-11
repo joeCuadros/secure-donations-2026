@@ -101,6 +101,36 @@ describe('Dominio Projects - Comprehensive Test Suite', () => {
   });
 
   describe('API Handlers', () => {
+    it('CA-02.1 / CA-09.2: getProjectHandler no expone el identificador del gestor en la vista pública', async () => {
+      vi.mocked(docClient.send).mockResolvedValueOnce({
+        Item: {
+          projectId: 'p-1',
+          title: 'Comedor',
+          description: 'Descripción',
+          purpose: 'Alimentación',
+          goalAmountCents: 100000,
+          confirmedAmountCents: 0,
+          currency: 'PEN',
+          status: 'PUBLICADO',
+          createdBy: 'sub-del-gestor',
+          createdAt: '2026-11-01T00:00:00.000Z',
+          updatedAt: '2026-11-01T00:00:00.000Z',
+        },
+      } as never);
+      const event = {
+        pathParameters: { projectId: 'p-1' },
+        requestContext: { requestId: 'req-1' },
+      } as unknown as APIGatewayProxyEventV2;
+
+      const res = (await getProjectHandler(event)) as APIGatewayProxyStructuredResultV2;
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body as string);
+      expect(body.projectId).toBe('p-1');
+      expect(body).not.toHaveProperty('createdBy');
+      expect(res.body).not.toContain('sub-del-gestor');
+    });
+
     it('createProjectHandler debe responder 201 Created al crear proyecto', async () => {
       vi.mocked(docClient.send).mockResolvedValueOnce({} as never).mockResolvedValueOnce({} as never);
       const event = mockGestorEvent({
