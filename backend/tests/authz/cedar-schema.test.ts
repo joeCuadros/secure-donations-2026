@@ -129,6 +129,7 @@ describe('HU-12: esquema Cedar embebido y validación STRICT del policy store', 
       SimulateDonation: [['User'], ['Donation']],
       ReadMyDonations: [['User'], ['Application']],
       ReadAuditLogs: [['User'], ['Application']],
+      ListDraftProjects: [['User'], ['Application']],
     });
   });
 
@@ -137,7 +138,15 @@ describe('HU-12: esquema Cedar embebido y validación STRICT del policy store', 
     const calls = backendCalls();
 
     expect(calls.map((c) => c.action).sort()).toEqual(
-      ['CreateDonation', 'CreateProject', 'PublishProject', 'ReadAuditLogs', 'ReadMyDonations', 'SimulateDonation']
+      [
+        'CreateDonation',
+        'CreateProject',
+        'ListDraftProjects',
+        'PublishProject',
+        'ReadAuditLogs',
+        'ReadMyDonations',
+        'SimulateDonation',
+      ]
     );
     for (const { action, resourceType } of calls) {
       expect(actions[action], `acción ${action}`).toBeDefined();
@@ -146,11 +155,11 @@ describe('HU-12: esquema Cedar embebido y validación STRICT del policy store', 
     }
   });
 
-  it('las seis políticas de la plantilla coinciden con policies/*.cedar', () => {
+  it('las siete políticas de la plantilla coinciden con policies/*.cedar', () => {
     const fromTemplate = Object.values(templatePolicies()).sort();
     const fromFiles = policyFiles().sort();
 
-    expect(fromTemplate).toHaveLength(6);
+    expect(fromTemplate).toHaveLength(7);
     expect(fromFiles).toEqual(fromTemplate);
   });
 
@@ -160,6 +169,16 @@ describe('HU-12: esquema Cedar embebido y validación STRICT del policy store', 
     expect(policy).toContain('SecureDonations::Action::"ReadMyDonations"');
     expect(policy).not.toContain('when');
     expect(policy).not.toContain('donorSub');
+  });
+
+  it('HU-08 / CA-08.2: ListDraftProjects solo se concede al grupo GESTOR, sin condiciones sobre el recurso', () => {
+    const policy = templatePolicies()['ListDraftProjectsPolicy']!;
+
+    expect(policy).toContain('principal in SecureDonations::UserGroup::"GESTOR"');
+    expect(policy).toContain('SecureDonations::Action::"ListDraftProjects"');
+    expect(policy).not.toContain('when');
+    expect(policy).not.toContain('DONANTE');
+    expect(policy).not.toContain('AUDITOR');
   });
 
   it('CA-07.2: SimulateDonation conserva la condición real de propiedad principal.sub == resource.donorSub', () => {

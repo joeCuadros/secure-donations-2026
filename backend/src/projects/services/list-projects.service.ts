@@ -3,6 +3,7 @@ import { docClient } from '../../shared/aws/dynamodb.client.js';
 import { env } from '../../shared/config/env.js';
 import type { ProjectItem } from '../types.js';
 import { encodeNextToken, decodeNextToken } from '../../shared/utils/pagination.js';
+import { toProjectSummary } from './project-summary.js';
 
 export const listProjectsService = async (limit: number = 20, nextToken?: string) => {
   const result = await docClient.send(
@@ -20,16 +21,7 @@ export const listProjectsService = async (limit: number = 20, nextToken?: string
 
   const items = (result.Items as ProjectItem[]) || [];
   return {
-    items: items.map((p) => ({
-      projectId: p.projectId,
-      title: p.title,
-      purpose: p.purpose,
-      goalAmountCents: p.goalAmountCents,
-      confirmedAmountCents: p.confirmedAmountCents,
-      currency: p.currency,
-      status: p.status,
-      createdAt: p.createdAt,
-    })),
+    items: items.map(toProjectSummary),
     nextToken: encodeNextToken(result.LastEvaluatedKey),
   };
 };

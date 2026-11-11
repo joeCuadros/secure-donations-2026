@@ -485,6 +485,45 @@ Resources:
               AuthorizationScopes:
                 - api/projects.write
 
+  # HU-08: borradores para el GESTOR. Ruta estatica: HTTP API da prioridad a /v1/projects/drafts sobre
+  # /v1/projects/{projectId}, de modo que no hay conflicto. Un projectId nunca puede ser "drafts": los genera el
+  # servidor con el formato prj_<12 hex> (create-project.service.ts) y el cliente no los elige.
+  ListDraftProjectsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      RetentionInDays: 14
+
+  ListDraftProjectsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../backend/dist
+      Handler: projects/api.listDraftProjectsHandler
+      LoggingConfig:
+        LogGroup: !Ref ListDraftProjectsLogGroup
+      Policies:
+        - !Ref AVPAuthPolicy
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: dynamodb:Query
+              Resource: !Sub ${ProjectsTable.Arn}/index/status-createdAt
+            # Solo registra eventos de auditoria de las consultas rechazadas (CA-08.3); no escribe en Projects.
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt AuditEventsTable.Arn
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /v1/projects/drafts
+            Method: GET
+            ApiId: !Ref HttpApi
+            Auth:
+              AuthorizationScopes:
+                - api/projects.write
+
   CreateDonationLogGroup:
     Type: AWS::Logs::LogGroup
     DeletionPolicy: Delete
@@ -655,7 +694,7 @@ Resources:
   # deben mantenerse sincronizados (lo verifica backend/tests/authz/cedar-schema.test.ts).
   #  - User(sub) pertenece a UserGroup; los grupos llegan del claim cognito:groups verificado.
   #  - Application es un singleton sin atributos para las acciones que no operan sobre una entidad concreta
-  #    (CreateProject, ReadMyDonations, ReadAuditLogs).
+  #    (CreateProject, ListDraftProjects, ReadMyDonations, ReadAuditLogs).
   #  - Project.status es opcional: PublishProject autoriza antes de leer el proyecto y no lo envia.
   #    CreateDonation lo envia ya leido de DynamoDB y su politica lo protege con "has".
   #  - Donation(donorSub, status) siempre se lee de DynamoDB antes de autorizar SimulateDonation.
@@ -784,6 +823,16 @@ Resources:
                       "Application"
                     ]
                   }
+                },
+                "ListDraftProjects": {
+                  "appliesTo": {
+                    "principalTypes": [
+                      "User"
+                    ],
+                    "resourceTypes": [
+                      "Application"
+                    ]
+                  }
                 }
               }
             }
@@ -814,6 +863,21 @@ Resources:
             permit (
               principal in SecureDonations::UserGroup::"GESTOR",
               action == SecureDonations::Action::"PublishProject",
+              resource
+            );
+
+  # HU-08: cualquier GESTOR puede listar todos los borradores (igual que PublishProject permite publicar cualquiera).
+  ListDraftProjectsPolicy:
+    Type: AWS::VerifiedPermissions::Policy
+    Properties:
+      PolicyStoreId: !GetAtt PolicyStore.PolicyStoreId
+      Definition:
+        Static:
+          Description: GESTOR puede listar los proyectos en borrador
+          Statement: |
+            permit (
+              principal in SecureDonations::UserGroup::"GESTOR",
+              action == SecureDonations::Action::"ListDraftProjects",
               resource
             );
 
