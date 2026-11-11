@@ -6,6 +6,11 @@ import type { AuthenticatedUser } from '../types.js';
 
 const avpClient = new VerifiedPermissionsClient({ region: env.AWS_REGION });
 
+// El esquema Cedar exige un tipo de recurso por acción. Las acciones que no operan sobre una entidad
+// concreta (CreateProject, ReadMyDonations, ReadAuditLogs) se evalúan contra este singleton sin atributos.
+const APPLICATION_RESOURCE_TYPE = 'Application';
+const APPLICATION_RESOURCE_ID = 'secure-donations';
+
 export const authorizeActionService = async (
   user: AuthenticatedUser,
   actionId: string,
@@ -32,20 +37,19 @@ export const authorizeActionService = async (
     },
   });
 
-  let resource;
-  if (resourceType && resourceId) {
-    resource = { entityType: `SecureDonations::${resourceType}`, entityId: resourceId };
-    const attributes: Record<string, any> = {};
+  const resource =
+    resourceType && resourceId
+      ? { entityType: `SecureDonations::${resourceType}`, entityId: resourceId }
+      : { entityType: `SecureDonations::${APPLICATION_RESOURCE_TYPE}`, entityId: APPLICATION_RESOURCE_ID };
 
-    if (resourceAttributes) {
-      for (const [key, value] of Object.entries(resourceAttributes)) {
-        if (typeof value === 'string') attributes[key] = { string: value };
-        else if (typeof value === 'boolean') attributes[key] = { boolean: value };
-        else if (typeof value === 'number') attributes[key] = { long: value };
-      }
-    }
-    entities.push({ identifier: resource, attributes });
+  // Solo se envían los atributos que el llamador conoce a partir de datos ya verificados o persistidos.
+  const attributes: Record<string, any> = {};
+  for (const [key, value] of Object.entries(resourceAttributes ?? {})) {
+    if (typeof value === 'string') attributes[key] = { string: value };
+    else if (typeof value === 'boolean') attributes[key] = { boolean: value };
+    else if (typeof value === 'number') attributes[key] = { long: value };
   }
+  entities.push({ identifier: resource, attributes });
 
   const command = new IsAuthorizedCommand({
     policyStoreId: env.AVP_POLICY_STORE_ID,

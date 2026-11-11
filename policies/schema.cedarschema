@@ -1,25 +1,33 @@
+// Esquema Cedar legible de Amazon Verified Permissions (fuente humana).
+// La plantilla infra/template.yaml embebe su forma JSON (PolicyStore.Schema.CedarJson) y el policy store
+// valida con modo STRICT; ambas formas deben mantenerse sincronizadas (backend/tests/authz/cedar-schema.test.ts).
 namespace SecureDonations {
-  entity User in [UserGroup] {
-    sub: String,
-    email?: String
-  };
-
   entity UserGroup;
 
+  // Principal: `sub` proviene del claim verificado; los grupos llegan de cognito:groups.
+  entity User in [UserGroup] {
+    sub: String
+  };
+
+  // Singleton sin atributos para las acciones que no operan sobre una entidad concreta
+  // (CreateProject, ReadMyDonations, ReadAuditLogs). Id: "secure-donations".
+  entity Application;
+
+  // `status` es opcional: PublishProject autoriza antes de leer el proyecto y no lo envía.
+  // CreateDonation lo envía leído de DynamoDB y su política lo protege con `has`.
   entity Project {
     status?: String
   };
 
+  // Siempre se lee de DynamoDB antes de autorizar SimulateDonation.
   entity Donation {
     donorSub: String,
-    status?: String
+    status: String
   };
-
-  entity AuditLog;
 
   action "CreateProject" appliesTo {
     principal: User,
-    resource: Project
+    resource: Application
   };
 
   action "PublishProject" appliesTo {
@@ -39,11 +47,11 @@ namespace SecureDonations {
 
   action "ReadMyDonations" appliesTo {
     principal: User,
-    resource: Donation
+    resource: Application
   };
 
   action "ReadAuditLogs" appliesTo {
     principal: User,
-    resource: AuditLog
+    resource: Application
   };
 }

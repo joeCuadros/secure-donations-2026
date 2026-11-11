@@ -2,9 +2,9 @@ import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda
 import { getErrorCode, handleError } from '../errors/error-handler.js';
 import { logger } from './logger.js';
 
-type ApiHandler = (event: APIGatewayProxyEventV2) => Promise<APIGatewayProxyResultV2>;
+export type ApiHandler = (event: APIGatewayProxyEventV2) => Promise<APIGatewayProxyResultV2>;
 
-const statusOf = (result: APIGatewayProxyResultV2): number =>
+export const statusOf = (result: APIGatewayProxyResultV2): number =>
   typeof result === 'object' && result !== null && typeof result.statusCode === 'number'
     ? result.statusCode
     : 200;

@@ -4,11 +4,12 @@ import { auditApi } from "../services/audit/api";
 import type { AuditEvent } from "../services/audit/types";
 import { useToast } from "../utils/ToastContext";
 
-type AuditEventType = "DONATION_EVENT" | "PROJECT_EVENT";
+type AuditEventType = "DONATION_EVENT" | "PROJECT_EVENT" | "AUDIT_EVENT";
 
 const eventLabels: Record<AuditEventType, string> = {
   DONATION_EVENT: "Eventos de donaciones",
   PROJECT_EVENT: "Eventos de proyectos",
+  AUDIT_EVENT: "Consultas de auditoría rechazadas",
 };
 
 const formatDate = (value: string) => {
@@ -18,17 +19,21 @@ const formatDate = (value: string) => {
     : date.toLocaleString("es-PE");
 };
 
-const OutcomeBadge = ({ outcome }: { outcome: AuditEvent["outcome"] }) => (
-  <span
-    className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-      outcome === "SUCCESS"
-        ? "bg-emerald-50 text-emerald-700"
-        : "bg-red-50 text-red-700"
-    }`}
-  >
-    {outcome === "SUCCESS" ? "Correcto" : "Fallido"}
-  </span>
-);
+const outcomeStyles: Record<AuditEvent["outcome"], { label: string; className: string }> = {
+  SUCCESS: { label: "Correcto", className: "bg-emerald-50 text-emerald-700" },
+  FAILURE: { label: "Fallido", className: "bg-red-50 text-red-700" },
+  DENIED: { label: "Denegado", className: "bg-amber-50 text-amber-800" },
+  ERROR: { label: "Error", className: "bg-red-50 text-red-700" },
+};
+
+const OutcomeBadge = ({ outcome }: { outcome: AuditEvent["outcome"] }) => {
+  const { label, className } = outcomeStyles[outcome];
+  return (
+    <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${className}`}>
+      {label}
+    </span>
+  );
+};
 
 export const AuditLogs = () => {
   const [logs, setLogs] = useState<AuditEvent[]>([]);

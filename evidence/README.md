@@ -8,6 +8,11 @@ seguridad. Cada archivo indica la fecha, el entorno y qué se observó realmente
 | Archivo | Descripción |
 |---|---|
 | [2026-11-11-smoke.md](2026-11-11-smoke.md) | Verificación sin credenciales contra el despliegue: tabla T01–T14 con trazabilidad y estado, pruebas unitarias relacionadas y observaciones sin procesar |
+| [2026-11-11-acceptance.md](2026-11-11-acceptance.md) | Pruebas de aceptación con usuarios reales: T01–T09, T11, T12 y T13 superadas, T10 con evidencia estática y T14 pendiente. Sustituye los estados «pendiente» de la verificación sin credenciales |
+
+Los eventos de auditoría (`AuditEvents`) registran también las operaciones rechazadas tras la autenticación (`DENIED`,
+`FAILURE`, `ERROR`). Ninguna de las evidencias anteriores incluye todavía una consulta de `GET /v1/audit` con esos
+eventos reales: esa comprobación en el despliegue está pendiente.
 
 ## Estados
 

@@ -1,7 +1,7 @@
 import { PutCommand } from '@aws-sdk/lib-dynamodb';
 import { docClient } from '../../shared/aws/dynamodb.client.js';
 import { env } from '../../shared/config/env.js';
-import { AUDIT_GSI_PARTITION, type CreateAuditInput, type AuditEventItem } from '../types.js';
+import { AUDIT_GSI_PARTITION, UNKNOWN_ACTOR_REF, type CreateAuditInput, type AuditEventItem } from '../types.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { logger } from '../../shared/logger/logger.js';
 
@@ -9,7 +9,9 @@ export const createAuditLogService = async (input: CreateAuditInput): Promise<Au
   try {
     const eventId = randomUUID();
     const timestamp = new Date().toISOString();
-    const actorRef = `actor_${createHash('sha256').update(input.actorSub).digest('hex').substring(0, 8)}`;
+    const actorRef = input.actorSub
+      ? `actor_${createHash('sha256').update(input.actorSub).digest('hex').substring(0, 8)}`
+      : UNKNOWN_ACTOR_REF;
 
     const item: AuditEventItem = {
       eventType: input.eventType,

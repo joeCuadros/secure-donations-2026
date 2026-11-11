@@ -4,6 +4,7 @@ import { createAuditLogService } from '../../src/audit/services/create-audit.ser
 import { listAuditLogsService } from '../../src/audit/services/list-audit.service.js';
 import { listAuditLogsHandler } from '../../src/audit/api.js';
 import { docClient } from '../../src/shared/aws/dynamodb.client.js';
+import { expectOnlyAuditWrites } from '../helpers/audit-calls.js';
 
 vi.mock('../../src/shared/aws/dynamodb.client.js', () => ({
   docClient: { send: vi.fn() },
@@ -179,7 +180,7 @@ describe('Dominio Audit - Comprehensive Test Suite', () => {
         message: expect.any(String),
         requestId: 'req_audit_555',
       });
-      expect(docClient.send).not.toHaveBeenCalled();
+      expectOnlyAuditWrites();
     });
 
     it.each([
@@ -190,7 +191,7 @@ describe('Dominio Audit - Comprehensive Test Suite', () => {
       const res = (await listAuditLogsHandler(mockAuditorEvent({ [field]: value }))) as APIGatewayProxyStructuredResultV2;
 
       expect(res.statusCode).toBe(400);
-      expect(docClient.send).not.toHaveBeenCalled();
+      expectOnlyAuditWrites();
     });
 
     it('listAuditLogsHandler responde 400 si from es posterior a to', async () => {

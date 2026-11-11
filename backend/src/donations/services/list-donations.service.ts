@@ -7,7 +7,9 @@ import { authorizeActionService } from '../../authz/services/avp.service.js';
 import type { AuthenticatedUser } from '../../authz/types.js';
 
 export const listMyDonationsService = async (user: AuthenticatedUser, limit: number = 20, nextToken?: string) => {
-  await authorizeActionService(user, 'ReadMyDonations', 'Donation', 'ListResource', { donorSub: user.sub });
+  // La política solo exige el grupo DONANTE. La propiedad se garantiza por construcción: la clave de partición
+  // del índice es el `sub` verificado del token y la consulta no acepta ningún identificador del cliente.
+  await authorizeActionService(user, 'ReadMyDonations');
 
   const result = await docClient.send(
     new QueryCommand({

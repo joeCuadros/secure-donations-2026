@@ -13,6 +13,7 @@ import {
   publishProjectHandler,
 } from '../../src/projects/api.js';
 import { docClient } from '../../src/shared/aws/dynamodb.client.js';
+import { expectOnlyAuditWrites } from '../helpers/audit-calls.js';
 
 vi.mock('../../src/shared/aws/dynamodb.client.js', () => ({
   docClient: { send: vi.fn() },
@@ -222,7 +223,7 @@ describe('Dominio Projects - Comprehensive Test Suite', () => {
         message: expect.any(String),
         requestId: 'req_proj_123',
       });
-      expect(docClient.send).not.toHaveBeenCalled();
+      expectOnlyAuditWrites(); // solo el evento FAILURE de auditoría
     });
 
     it('CA-08.2: publishProjectHandler responde 409 si otra solicitud publica primero (ConditionalCheckFailedException)', async () => {
@@ -234,7 +235,7 @@ describe('Dominio Projects - Comprehensive Test Suite', () => {
 
       expect(res.statusCode).toBe(409);
       expect(JSON.parse(res.body as string).code).toBe('CONFLICT');
-      expect(docClient.send).toHaveBeenCalledTimes(2); // sin evento de auditoría
+      expect(docClient.send).toHaveBeenCalledTimes(3); // lectura, actualización condicionada y evento FAILURE
     });
 
     it('CA-08.2: publishProjectService traduce la condición fallida a un conflicto de negocio', async () => {

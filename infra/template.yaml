@@ -591,6 +591,10 @@ Resources:
             - Effect: Allow
               Action: dynamodb:Query
               Resource: !Sub ${DonationsTable.Arn}/index/donorSub-createdAt
+            # Solo registra eventos de auditoria de las consultas rechazadas (CA-10.2); no escribe en Donations.
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt AuditEventsTable.Arn
       Events:
         ApiEvent:
           Type: HttpApi
@@ -625,6 +629,10 @@ Resources:
               Resource:
                 - !GetAtt AuditEventsTable.Arn
                 - !Sub ${AuditEventsTable.Arn}/index/AllAuditLogsIndex
+            # Solo registra eventos de auditoria de las consultas rechazadas (CA-10.2).
+            - Effect: Allow
+              Action: dynamodb:PutItem
+              Resource: !GetAtt AuditEventsTable.Arn
       Events:
         ApiEvent:
           Type: HttpApi
@@ -640,12 +648,146 @@ Resources:
   # Un recurso Policy estatico admite exactamente una sentencia: hay una politica por cada permit
   # y el contenido refleja policies/*.cedar. Los nombres de entidades, acciones y atributos son los
   # que envia backend/src/authz/services/avp.service.ts (espacio de nombres SecureDonations).
+  #
+  # Validacion STRICT (HU-12, CA-12.1): cada politica se valida contra el esquema al crearse o modificarse,
+  # de modo que un error de tipeo en una entidad, accion o atributo falla el despliegue en lugar de pasar en silencio.
+  # El esquema JSON de abajo es la forma de despliegue de policies/schema.cedarschema (fuente legible):
+  # deben mantenerse sincronizados (lo verifica backend/tests/authz/cedar-schema.test.ts).
+  #  - User(sub) pertenece a UserGroup; los grupos llegan del claim cognito:groups verificado.
+  #  - Application es un singleton sin atributos para las acciones que no operan sobre una entidad concreta
+  #    (CreateProject, ReadMyDonations, ReadAuditLogs).
+  #  - Project.status es opcional: PublishProject autoriza antes de leer el proyecto y no lo envia.
+  #    CreateDonation lo envia ya leido de DynamoDB y su politica lo protege con "has".
+  #  - Donation(donorSub, status) siempre se lee de DynamoDB antes de autorizar SimulateDonation.
+  # Las politicas dependen del policy store por !GetAtt (orden implicito); no hay DependsOn adicional.
   PolicyStore:
     Type: AWS::VerifiedPermissions::PolicyStore
     Properties:
       Description: Politicas Cedar de la Plataforma de Donaciones Seguras
       ValidationSettings:
-        Mode: "OFF"
+        Mode: "STRICT"
+      Schema:
+        CedarJson: |
+          {
+            "SecureDonations": {
+              "entityTypes": {
+                "User": {
+                  "shape": {
+                    "type": "Record",
+                    "attributes": {
+                      "sub": {
+                        "type": "String",
+                        "required": true
+                      }
+                    }
+                  },
+                  "memberOfTypes": [
+                    "UserGroup"
+                  ]
+                },
+                "UserGroup": {
+                  "shape": {
+                    "type": "Record",
+                    "attributes": {}
+                  }
+                },
+                "Application": {
+                  "shape": {
+                    "type": "Record",
+                    "attributes": {}
+                  }
+                },
+                "Project": {
+                  "shape": {
+                    "type": "Record",
+                    "attributes": {
+                      "status": {
+                        "type": "String",
+                        "required": false
+                      }
+                    }
+                  }
+                },
+                "Donation": {
+                  "shape": {
+                    "type": "Record",
+                    "attributes": {
+                      "donorSub": {
+                        "type": "String",
+                        "required": true
+                      },
+                      "status": {
+                        "type": "String",
+                        "required": true
+                      }
+                    }
+                  }
+                }
+              },
+              "actions": {
+                "CreateProject": {
+                  "appliesTo": {
+                    "principalTypes": [
+                      "User"
+                    ],
+                    "resourceTypes": [
+                      "Application"
+                    ]
+                  }
+                },
+                "PublishProject": {
+                  "appliesTo": {
+                    "principalTypes": [
+                      "User"
+                    ],
+                    "resourceTypes": [
+                      "Project"
+                    ]
+                  }
+                },
+                "CreateDonation": {
+                  "appliesTo": {
+                    "principalTypes": [
+                      "User"
+                    ],
+                    "resourceTypes": [
+                      "Project"
+                    ]
+                  }
+                },
+                "SimulateDonation": {
+                  "appliesTo": {
+                    "principalTypes": [
+                      "User"
+                    ],
+                    "resourceTypes": [
+                      "Donation"
+                    ]
+                  }
+                },
+                "ReadMyDonations": {
+                  "appliesTo": {
+                    "principalTypes": [
+                      "User"
+                    ],
+                    "resourceTypes": [
+                      "Application"
+                    ]
+                  }
+                },
+                "ReadAuditLogs": {
+                  "appliesTo": {
+                    "principalTypes": [
+                      "User"
+                    ],
+                    "resourceTypes": [
+                      "Application"
+                    ]
+                  }
+                }
+              }
+            }
+          }
 
   CreateProjectPolicy:
     Type: AWS::VerifiedPermissions::Policy
@@ -689,7 +831,7 @@ Resources:
               resource
             )
             when {
-              resource.status == "PUBLICADO"
+              resource has status && resource.status == "PUBLICADO"
             };
 
   SimulateDonationPolicy:
@@ -709,22 +851,23 @@ Resources:
               principal.sub == resource.donorSub
             };
 
+  # CA-07.1: la politica solo concede la accion al grupo DONANTE; no hay condicion de propiedad en Cedar.
+  # Una condicion principal.sub == resource.donorSub seria una tautologia, porque el historial no tiene un recurso
+  # persistido que comparar. La propiedad se garantiza de forma estructural en el handler: la consulta usa el sub
+  # verificado del token como clave de particion del indice donorSub-createdAt y no acepta identificadores del cliente.
   ReadMyDonationsPolicy:
     Type: AWS::VerifiedPermissions::Policy
     Properties:
       PolicyStoreId: !GetAtt PolicyStore.PolicyStoreId
       Definition:
         Static:
-          Description: DONANTE puede listar solo su propio historial
+          Description: DONANTE puede consultar su historial (la propiedad se garantiza por la clave de consulta)
           Statement: |
             permit (
               principal in SecureDonations::UserGroup::"DONANTE",
               action == SecureDonations::Action::"ReadMyDonations",
               resource
-            )
-            when {
-              principal.sub == resource.donorSub
-            };
+            );
 
   # Conserva el identificador logico historico de la politica del grupo AUDITOR.
   # El MFA de AUDITOR se exige en Cognito (Policy Administrator) mediante su preferencia TOTP,

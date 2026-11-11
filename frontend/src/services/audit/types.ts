@@ -1,3 +1,6 @@
+// DENIED: acceso denegado; FAILURE: rechazo por validación o regla de negocio; ERROR: fallo inesperado.
+export type AuditOutcome = "SUCCESS" | "FAILURE" | "DENIED" | "ERROR";
+
 export interface AuditEvent {
   eventType: string;
   timestampEventId: string;
@@ -7,7 +10,7 @@ export interface AuditEvent {
   actorRef: string;
   action: string;
   resourceRef: string;
-  outcome: "SUCCESS" | "FAILURE";
+  outcome: AuditOutcome;
 }
 
 export interface AuditListResponse {

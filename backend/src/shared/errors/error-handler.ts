@@ -11,6 +11,12 @@ export const getErrorCode = (error: unknown): ErrorCode => {
   return ErrorCode.INTERNAL_ERROR;
 };
 
+export const getErrorStatusCode = (error: unknown): number => {
+  if (error instanceof AppError) return error.statusCode;
+  if (error instanceof ZodError) return 400;
+  return 500;
+};
+
 // Los errores esperados (AppError, ZodError) quedan trazados en la línea de acceso del handler.
 export const handleError = (error: unknown, requestId: string): APIGatewayProxyResultV2 => {
   if (error instanceof AppError) {
