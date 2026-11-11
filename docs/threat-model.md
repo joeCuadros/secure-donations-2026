@@ -97,7 +97,7 @@ compartida.
 |---|---|---|---|---|
 | S | Una función suplanta al motor de políticas o consulta otro almacén | El rol de las funciones protegidas solo permite `verifiedpermissions:IsAuthorized` sobre el ARN del almacén de políticas | `AVPAuthPolicy` (no se adjunta a las tres funciones públicas) | Plantilla |
 | T | El cliente inyecta atributos para obtener un `ALLOW` | Las entidades se construyen en el servidor: grupos y `sub` desde claims verificados; `donorSub` y `status` desde el registro persistido | `backend/src/authz/services/avp.service.ts`, `simulate-donation.service.ts`, `create-donation.service.ts` | Unitaria (forma de la solicitud); decisión real **pendiente** |
-| E | Elevación vertical (donante gestiona proyectos) | Una política `permit` por regla; denegación por defecto: `CreateProject`/`PublishProject` solo `GESTOR`, `CreateDonation` y `SimulateDonation` solo `DONANTE`, `ReadAuditLogs` solo `AUDITOR` | `policies/*.cedar`; `CreateProjectPolicy`, `PublishProjectPolicy`, `CreateDonationPolicy`, `SimulateDonationPolicy`, `ReadMyDonationsPolicy`, `CoreAuthorizationPolicy` | **Pendiente** (T03, T12) |
+| E | Elevación vertical (donante gestiona proyectos) | Una política `permit` por regla; denegación por defecto: `CreateProject`, `PublishProject` y `ListDraftProjects` solo `GESTOR`, `CreateDonation` y `SimulateDonation` solo `DONANTE`, `ReadAuditLogs` solo `AUDITOR` | `policies/*.cedar`; `CreateProjectPolicy`, `PublishProjectPolicy`, `ListDraftProjectsPolicy`, `CreateDonationPolicy`, `SimulateDonationPolicy`, `ReadMyDonationsPolicy`, `CoreAuthorizationPolicy` | **Pendiente** (T03, T03b, T12) |
 | E | Acceso horizontal (BOLA) a donaciones ajenas | `SimulateDonation` exige `principal.sub == resource.donorSub`; además la transacción de DynamoDB condiciona `donorSub = :sub` (segunda barrera independiente de Cedar) | `SimulateDonationPolicy`; `simulate-donation.service.ts` | **Pendiente** (T09). La condición de DynamoDB no tiene aserción en las pruebas unitarias |
 | E | Donar a un proyecto no publicado | `CreateDonation` exige `resource.status == "PUBLICADO"`, y el servicio devuelve 409 antes de consultar | `CreateDonationPolicy`; `create-donation.service.ts` | Unitaria (409); Cedar **pendiente** |
 | R | Decisiones sin registro | Una denegación queda en el log de acceso (403 con `errorCode`) y se persiste en `AuditEvents` con resultado `DENIED` (actor seudonimizado, acción, recurso y `requestId`). No se guarda el detalle de la decisión del motor ni la política que la produjo | `access-log.ts`, `audit/audited-handler.ts` | Unitaria; el detalle del motor es una limitación declarada |
@@ -110,8 +110,11 @@ del historial es estructural: la consulta usa el `sub` verificado del token como
 `donorSub-createdAt` y no acepta ningún identificador del cliente (prueba unitaria en
 `backend/tests/donations/donations.test.ts`). `SimulateDonation` sí conserva su condición
 `principal.sub == resource.donorSub`, porque el recurso se lee de DynamoDB. Las reglas de `policies/*.cedar` y de
-`template.yaml` se mantienen a mano en dos lugares; una prueba unitaria compara las seis sentencias, pero no sustituye
-la validación STRICT del almacén ni `cedar validate`.
+`template.yaml` se mantienen a mano en dos lugares; una prueba unitaria compara las siete sentencias, pero no sustituye
+la validación STRICT del almacén ni `cedar validate`. `ListDraftProjects` sigue el mismo criterio que `PublishProject`:
+la matriz de roles asigna la gestión de proyectos al rol GESTOR, de modo que cualquier GESTOR ve todos los borradores
+(no solo los propios); la lista no devuelve `createdBy`, y los borradores permanecen invisibles para visitantes y
+no gestores (CA-01.2, CA-02.2).
 
 ### Frontera 6: Lambda → DynamoDB
 
@@ -120,8 +123,8 @@ la validación STRICT del almacén ni `cedar validate`.
 | E | Una función comprometida lee o escribe más de lo necesario | Un rol por función con acciones y recursos exactos (tabla siguiente); sin `Action: "*"` ni `Resource: "*"` en las políticas propias | Bloques `Policies` de cada `AWS::Serverless::Function` | Despliegue para `ListProjects` (T10, evidencia estática de IAM); Plantilla para el resto |
 | T | Doble conteo, transiciones inválidas, repetición de solicitudes | `TransactWriteItems` con condiciones: reserva de clave (`attribute_not_exists(pk)`) y donación en una sola transacción; transición `status = PENDIENTE_SIMULACION AND donorSub = :sub` con incremento del acumulado en la misma transacción; publicación condicionada a `BORRADOR`; importes en céntimos enteros; `ConsistentRead` en lecturas por clave | `create-donation.service.ts`, `simulate-donation.service.ts`, `publish-project.service.ts` | Unitaria (simulada); **pendiente** en vivo (T06–T08) |
 | T | Reutilizar una clave de idempotencia con otro cuerpo o de otro usuario | `payloadHash` SHA-256 y clave `sub#createDonation#idempotencyKey`; TTL de 24 h | `create-donation.service.ts`; `IdempotencyTable` | Unitaria; **pendiente** (T06, T07) |
-| R | Repudio o manipulación del rastro | Las funciones que escriben auditoría solo tienen `PutItem` sobre `AuditEvents` (sin actualizar ni borrar); actor seudonimizado con SHA-256 truncado; sin tokens ni datos financieros. Los seis handlers protegidos persisten un evento por solicitud: `SUCCESS` en las escrituras exitosas y, tras autenticar, `DENIED` (401/403), `FAILURE` (400, 404, 409) o `ERROR` (5xx) en los rechazos; sin identidad verificada el actor es `actor_unknown`. Las consultas exitosas (historial y auditoría) no se registran. Un fallo al escribir la auditoría se registra en el log y no cambia la respuesta | `create-audit.service.ts`, `audit/audited-handler.ts`; handlers | Unitaria; la escritura real en `AuditEvents` está **pendiente** de verificar en el despliegue |
-| I | Divulgación de datos de donantes en vistas públicas | El catálogo y las estadísticas no incluyen donantes; el historial se consulta por `donorSub` y no devuelve ese campo. **Defecto observado en el código**: el detalle público del proyecto (`GET /v1/projects/{id}`) devuelve también `createdBy` (el `sub` del gestor) | `list-projects.service.ts`, `list-donations.service.ts`, `get-project.service.ts` | Unitaria / código; defecto reportado |
+| R | Repudio o manipulación del rastro | Las funciones que escriben auditoría solo tienen `PutItem` sobre `AuditEvents` (sin actualizar ni borrar); actor seudonimizado con SHA-256 truncado; sin tokens ni datos financieros. Los siete handlers protegidos persisten un evento por solicitud: `SUCCESS` en las escrituras exitosas y, tras autenticar, `DENIED` (401/403), `FAILURE` (400, 404, 409) o `ERROR` (5xx) en los rechazos; sin identidad verificada el actor es `actor_unknown`. Las consultas exitosas (historial, auditoría y borradores) no se registran. Un fallo al escribir la auditoría se registra en el log y no cambia la respuesta | `create-audit.service.ts`, `audit/audited-handler.ts`; handlers | Unitaria; la escritura real en `AuditEvents` está **pendiente** de verificar en el despliegue |
+| I | Divulgación de datos de donantes en vistas públicas | El catálogo y las estadísticas no incluyen donantes; el historial se consulta por `donorSub` y no devuelve ese campo. El detalle público del proyecto tampoco devuelve `createdBy` (el `sub` del gestor): se detectó en revisión y se corrigió | `project-summary.ts`, `projects/api.ts`, `list-donations.service.ts` | Unitaria (CA-02.1, CA-09.2) y T03b en el despliegue |
 | I | Datos en reposo | Cifrado por defecto de DynamoDB con clave propiedad de AWS; no hay PITR ni copias de respaldo (laboratorio desechable) | `Properties` de las tablas | Plantilla |
 | D | Saturación o costos | Capacidad bajo demanda; limitación en API Gateway; TTL para registros de idempotencia | Tablas | Plantilla |
 
@@ -135,6 +138,7 @@ Permisos DynamoDB por función (extraídos de `infra/template.yaml`):
 | `PublishProjectFunction` | `GetItem`, `UpdateItem` en `Projects`; `PutItem` en `AuditEvents` | Sí |
 | `CreateDonationFunction` | `GetItem` en `Idempotency` y `Projects`; `PutItem` en `Idempotency`, `Donations` y `AuditEvents` | Sí |
 | `SimulateDonationFunction` (solo stage `academic`) | `GetItem`, `UpdateItem` en `Donations`; `UpdateItem` en `Projects`; `PutItem` en `AuditEvents` | Sí |
+| `ListDraftProjectsFunction` | `Query` en el índice `Projects/index/status-createdAt`; `PutItem` en `AuditEvents` (eventos de consultas rechazadas); no escribe en `Projects` | Sí |
 | `ListMyDonationsFunction` | `Query` en el índice `Donations/index/donorSub-createdAt`; `PutItem` en `AuditEvents` (eventos de consultas rechazadas) | Sí |
 | `ListAuditLogsFunction` | `Query` en `AuditEvents` y en `AuditEvents/index/AllAuditLogsIndex`; `PutItem` en `AuditEvents` (eventos de consultas rechazadas) | Sí |
 
@@ -181,7 +185,12 @@ administrada no está acotada a los grupos de logs de la pila.
 4. **MFA exigido en el IdP, no por claim.** El access token de Cognito no incluye `amr`, por lo que la política de
    auditoría no comprueba MFA. El control está en el pool (`MfaConfiguration: "ON"`), que exige TOTP a todos los
    usuarios; es más estricto que la matriz de requerimientos, donde el MFA del DONANTE es opcional.
-5. **Tokens en memoria.** Recargar la página obliga a iniciar sesión de nuevo (decisión por CA-NF11.1).
+5. **Tokens en memoria.** Recargar la página descarta los tokens (decisión por CA-NF11.1). Para no obligar a escribir
+   las credenciales en cada F5, la SPA guarda en `sessionStorage` solo una bandera booleana («hubo sesión en esta
+   pestaña») y, si falta el usuario en memoria, inicia una vez `signinRedirect`; la cookie de sesión del dominio alojado
+   de Cognito (inaccesible para el JavaScript de la SPA) devuelve el código sin pedir credenciales mientras siga
+   vigente. La bandera no contiene token, identificador ni claim, se borra al cerrar sesión y ante cualquier error, y
+   se borra antes de redirigir para evitar bucles; un XSS que la manipule solo provoca o evita una redirección.
 6. **Políticas y esquema Cedar duplicados** entre `policies/` y `template.yaml` (el esquema, en su forma legible y
    en la JSON embebida). El almacén valida con `STRICT`, pero la coherencia entre las copias solo la comprueba una
    prueba unitaria; no se ejecutó `cedar validate` ni se confirmó el esquema en un conjunto de cambios.
@@ -193,11 +202,11 @@ administrada no está acotada a los grupos de logs de la pila.
 9. **Sin registros de acceso** de CloudFront ni S3, sin alarmas de CloudWatch y sin copias de respaldo de DynamoDB.
 10. **Autorregistro y PKCE.** La plantilla no restringe el registro de usuarios ni puede imponer PKCE en el app client
     (el cliente lo aplica).
-11. **Exposición menor en la API pública.** `GET /v1/projects/{id}` devuelve `createdBy`; `POST
+11. **Exposición menor en la API.** `POST
     /v1/donations/{id}/simulate` distingue 404 (no existe) de 403 (ajena), lo que permite comprobar si un identificador
     existe.
 12. **Cuenta compartida por el equipo.** El aislamiento entre integrantes depende de IAM y de la disciplina del equipo.
-13. **Controles autenticados sin ejecutar.** T03–T09, T12–T14 y la mitad ID token de T11 siguen pendientes.
+13. **Controles autenticados sin ejecutar.** T03–T09, T03b, T12–T14 y la mitad ID token de T11 siguen pendientes.
 
 ## 6. Preguntas de discusión
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
-# scripts/acceptance.sh - Pruebas de aceptacion T01-T12 contra la API desplegada.
+# scripts/acceptance.sh - Pruebas de aceptacion T01-T12 (y T03b) contra la API desplegada.
 #
 # Requisitos: bash y curl. jq es opcional (si no esta, se usan sed/grep sobre el JSON compacto de la API).
 #
@@ -9,7 +9,7 @@
 #   export DONOR_ACCESS_TOKEN=...      # access token de un usuario del grupo DONANTE
 #   export DONOR_ID_TOKEN=...          # ID token de ese mismo usuario (solo para T11)
 #   export DONOR2_ACCESS_TOKEN=...     # access token de un SEGUNDO usuario DONANTE (T09)
-#   export MANAGER_ACCESS_TOKEN=...    # access token de un usuario del grupo GESTOR (T12 y preparacion)
+#   export MANAGER_ACCESS_TOKEN=...    # access token de un usuario del grupo GESTOR (T03b, T12 y preparacion)
 #   export PROJECT_ID=...              # opcional: proyecto PUBLICADO ya existente para donar
 #   bash scripts/acceptance.sh
 #
@@ -19,6 +19,8 @@
 #     (queda en la base de datos del despliegue hasta ejecutar `sam delete`). Sin ambos, T05-T09 quedan SKIPPED.
 #   - Los tokens solo se leen de variables de entorno, no se imprimen y se pasan a curl mediante un archivo de
 #     cabeceras temporal (permisos 600) para que no aparezcan en la lista de procesos. El script no usa `set -x`.
+#   - T03b (GET /v1/projects/drafts, HU-08): DONANTE recibe 403; GESTOR recibe 200 con el borrador de la preparacion
+#     (antes de publicarlo) y sin el campo createdBy. Con un solo token la prueba es parcial, como T11.
 #   - T10, T13 y T14 no se pueden automatizar solo con curl: se imprime el procedimiento manual y se informan
 #     como SKIPPED (manual). Su evidencia debe registrarse en evidence/.
 #   - Codigo de salida: 0 si no hay FAIL; 1 si alguna prueba FALLA; 2 si falta configuracion o falla la preparacion.
@@ -165,10 +167,11 @@ donation_body() { # projectId amountCents
 # ---------------------------------------------------------------- resultados
 
 CA_IDS=("" "CA-01.1, CA-01.2" "CA-03.2" "CA-04.1" "CA-05.2" "CA-05.1" "CA-05.4" "CA-05.4" \
-        "CA-06.2, CA-NF04.1" "CA-07.2" "CA-NF03.1" "CA-03.2, CA-NF02.1" "CA-04.2" "CA-03.4" "CA-11.2")
+        "CA-06.2, CA-NF04.1" "CA-07.2" "CA-NF03.1" "CA-03.2, CA-NF02.1" "CA-04.2" "CA-03.4" "CA-11.2" \
+        "CA-04.1, CA-08.2")  # el indice 15 es T03b y se imprime justo despues de T03
 RES_STATUS=()
 RES_DETAIL=()
-for i in $(seq 1 14); do RES_STATUS[$i]="SKIPPED"; RES_DETAIL[$i]="no ejecutada"; done
+for i in $(seq 1 15); do RES_STATUS[$i]="SKIPPED"; RES_DETAIL[$i]="no ejecutada"; done
 
 set_result() { # n estado detalle
   RES_STATUS[$1]=$2
@@ -231,6 +234,47 @@ run_t03() {
     '{"title":"Intento de donante","description":"Un donante no debe poder crear proyectos","purpose":"Prueba","goalAmountCents":100000}'
   if [ "$HTTP_STATUS" = 403 ]; then set_result 3 PASS "403 para DONANTE: $(short_body)"
   else set_result 3 FAIL "esperado 403, obtenido $HTTP_STATUS: $(short_body)"; fi
+}
+
+# ---------------------------------------------------------------- T03b
+# GET /v1/projects/drafts es solo para GESTOR. Debe ejecutarse antes de publicar el borrador de la preparacion.
+run_t03b() {
+  local problems="" notes=""
+  if [ -z "$DONOR_ACCESS_TOKEN" ] && [ -z "$MANAGER_ACCESS_TOKEN" ]; then
+    skip 15 "faltan DONOR_ACCESS_TOKEN y MANAGER_ACCESS_TOKEN"; return
+  fi
+  if [ -n "$DONOR_ACCESS_TOKEN" ]; then
+    call GET /v1/projects/drafts "$DONOR_ACCESS_TOKEN"
+    if [ "$HTTP_STATUS" = 403 ]; then notes="403 para DONANTE"
+    else problems="DONANTE -> $HTTP_STATUS (esperado 403)"; fi
+    if printf '%s' "$HTTP_BODY" | grep -q '"projectId"'; then problems="$problems; la respuesta al DONANTE contiene proyectos"; fi
+  else
+    notes="mitad DONANTE omitida (falta DONOR_ACCESS_TOKEN)"
+  fi
+  if [ -n "$MANAGER_ACCESS_TOKEN" ]; then
+    call GET "/v1/projects/drafts?limit=100" "$MANAGER_ACCESS_TOKEN"
+    if [ "$HTTP_STATUS" != 200 ]; then
+      problems="$problems; GESTOR -> $HTTP_STATUS (esperado 200)"
+    else
+      notes="$notes; 200 para GESTOR"
+      if printf '%s' "$HTTP_BODY" | grep -q 'createdBy'; then problems="$problems; la respuesta contiene createdBy"; fi
+      if printf '%s' "$HTTP_BODY" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"PUBLICADO"'; then
+        problems="$problems; hay proyectos PUBLICADO entre los borradores"
+      fi
+      if [ -n "$DRAFT_ID" ]; then
+        if printf '%s' "$HTTP_BODY" | grep -q "\"$DRAFT_ID\""; then notes="$notes; el borrador $DRAFT_ID aparece antes de publicarse"
+        else problems="$problems; el borrador $DRAFT_ID no aparece en la lista"; fi
+      else
+        notes="$notes; sin borrador de preparacion (PROJECT_ID definido): su aparicion no se comprobo"
+      fi
+    fi
+  else
+    notes="$notes; mitad GESTOR omitida (falta MANAGER_ACCESS_TOKEN)"
+  fi
+  problems="${problems#; }"
+  if [ -n "$problems" ]; then set_result 15 FAIL "$problems"
+  elif [ -z "$DONOR_ACCESS_TOKEN" ] || [ -z "$MANAGER_ACCESS_TOKEN" ]; then set_result 15 PASS "parcial: ${notes#; }"
+  else set_result 15 PASS "${notes#; }"; fi
 }
 
 # ---------------------------------------------------------------- T04
@@ -409,6 +453,7 @@ run_t12() {
 # ---------------------------------------------------------------- ejecucion
 
 run_t01
+run_t03b
 publish_draft
 run_t02
 run_t03
@@ -429,8 +474,9 @@ skip 14 "manual (ver procedimiento al final)"
 printf '\n%-5s %-8s %-20s %s\n' "ID" "ESTADO" "TRAZABILIDAD" "DETALLE"
 printf '%-5s %-8s %-20s %s\n' "-----" "--------" "--------------------" "-------"
 pass=0; fail=0; skipped=0
-for i in $(seq 1 14); do
-  printf 'T%02d   %-8s %-20s %s\n' "$i" "${RES_STATUS[$i]}" "${CA_IDS[$i]}" "${RES_DETAIL[$i]}"
+for i in 1 2 3 15 4 5 6 7 8 9 10 11 12 13 14; do
+  if [ "$i" = 15 ]; then id=T03b; else id=$(printf 'T%02d' "$i"); fi
+  printf '%-5s %-8s %-20s %s\n' "$id" "${RES_STATUS[$i]}" "${CA_IDS[$i]}" "${RES_DETAIL[$i]}"
   case "${RES_STATUS[$i]}" in
     PASS) pass=$(( pass + 1 )) ;;
     FAIL) fail=$(( fail + 1 )) ;;

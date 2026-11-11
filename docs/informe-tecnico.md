@@ -20,7 +20,7 @@ flowchart TD
   CF -->|"OAC (SigV4)"| S3[("S3 privado<br/>SPA React")]
   U -->|"Authorization Code + PKCE"| IDP["Cognito User Pool<br/>grupos DONANTE / GESTOR / AUDITOR<br/>TOTP por usuario (Policy Administrator)"]
   U -->|"Bearer access token"| APIG["API Gateway HTTP API<br/>JWT authorizer + scopes por ruta<br/>(PEP 1)"]
-  APIG --> FN["9 funciones Lambda Node.js 24<br/>un rol IAM por función<br/>(PEP 2: claims verificados + decisión del PE)"]
+  APIG --> FN["10 funciones Lambda Node.js 24<br/>un rol IAM por función<br/>(PEP 2: claims verificados + decisión del PE)"]
   FN -->|IsAuthorized| AVP["Verified Permissions<br/>políticas Cedar (Policy Engine)"]
   FN --> DB[("DynamoDB<br/>Projects / Donations /<br/>Idempotency / AuditEvents")]
   FN --> LOG["CloudWatch Logs<br/>JSON, retención 14 días"]
@@ -43,7 +43,7 @@ rol IAM por función. El navegador y la red no son confiables. El detalle STRIDE
 | Decisión | Cómo se realizó |
 |---|---|
 | AD-01 Zero Trust | Autenticación y autorización en cada solicitud protegida; rol IAM por función; registro de eventos |
-| AD-02 Serverless modular | SPA React estática; 9 funciones Lambda (TypeScript) en módulos `projects`, `donations`, `authz`, `audit` y `shared` |
+| AD-02 Serverless modular | SPA React estática; 10 funciones Lambda (TypeScript) en módulos `projects`, `donations`, `authz`, `audit` y `shared` |
 | AD-03 Transacciones simuladas | Estados simulados, sin datos de pago; la ruta de simulación existe solo en el stage `academic` (condición `IsAcademicStage`); la interfaz muestra «Simulación académica: no se ha realizado ningún cobro» |
 | AD-04 Backend autoritativo | Validación con Zod (`amountCents` entero entre 100 y 100000, `Idempotency-Key` UUID); importes en céntimos; `donorSub` solo del token |
 | AD-05 Idempotencia atómica | Reserva de clave y creación de la donación en un único `TransactWriteItems` condicionado |
@@ -119,7 +119,7 @@ una modifica el acumulado.
 
 ## 7. Mínimo privilegio
 
-Cada una de las 9 funciones tiene su propio rol, con las acciones y los recursos que usa: por ejemplo, el listado del
+Cada una de las 10 funciones tiene su propio rol, con las acciones y los recursos que usa: por ejemplo, el listado del
 catálogo solo `Query` sobre `Projects/index/status-createdAt`, y la simulación `GetItem`/`UpdateItem` sobre `Donations`,
 `UpdateItem` sobre `Projects` y `PutItem` sobre `AuditEvents`. Las políticas propias no usan `Action: "*"` ni
 `Resource: "*"`. La política de Verified Permissions (`IsAuthorized` sobre el ARN del almacén) solo se adjunta a las
@@ -127,7 +127,11 @@ funciones protegidas. La demostración es la evidencia estática de T10 (§5). L
 `AWSLambdaBasicExecutionRole` concede permisos de logs más amplios que los de la pila.
 
 Con la auditoría de rechazos (§8), `ListMyDonationsFunction` y `ListAuditLogsFunction` reciben además `PutItem` sobre
-`AuditEvents`, y nada más. Ese cambio está en la plantilla, pero **no se ha desplegado** ni verificado en AWS.
+`AuditEvents`, y nada más. La función de borradores (`ListDraftProjectsFunction`, `GET /v1/projects/drafts`, HU-08)
+nace con ese mismo criterio: `Query` solo sobre `Projects/index/status-createdAt`, `PutItem` sobre `AuditEvents` y la
+política de Verified Permissions; sin escritura en `Projects`. Su acción Cedar `ListDraftProjects` es la séptima y
+se concede solo al grupo GESTOR. Estos cambios están en la plantilla, pero **no se han desplegado** ni verificado en
+AWS.
 
 ## 8. Observabilidad
 
@@ -136,7 +140,7 @@ Con la auditoría de rechazos (§8), `ListMyDonationsFunction` y `ListAuditLogsF
   el `sub` (lo comprueban pruebas unitarias).
 - **`AuditEvents`.** Cada evento lleva `timestamp`, `requestId`, actor seudonimizado (`actor_` más 8 caracteres de un
   SHA-256 del `sub`, o `actor_unknown` sin identidad verificada), acción, recurso y resultado. Tras el cambio de esta
-  etapa, los seis handlers protegidos registran también las operaciones rechazadas después de autenticar: `DENIED`
+  etapa, los siete handlers protegidos registran también las operaciones rechazadas después de autenticar: `DENIED`
   (401/403), `FAILURE` (400, 404, 409) y `ERROR` (5xx). Las consultas exitosas del historial y de la auditoría no se
   registran. Un fallo al escribir el evento se anota en el log y no cambia la respuesta. Cubre CA-08.3, CA-10.2 y el
   principio 7. Estado: pruebas unitarias; **pendiente** de verificar en el despliegue.
@@ -183,6 +187,9 @@ propio `sub` del token, de modo que comparaba al usuario consigo mismo. La polí
   del stage (10 solicitudes/s, ráfaga de 20) es la única defensa.
 - Sin logs de acceso de CloudFront o S3, alarmas ni respaldos de DynamoDB.
 - El access token no incluye `amr`; el MFA se exige en Cognito, no en Cedar.
+- Los tokens viven solo en memoria (CA-NF11.1). Al recargar, la SPA reanuda la sesión con un nuevo flujo PKCE si una
+  bandera booleana de `sessionStorage` indica que hubo sesión en la pestaña; sin token ni identificador en el
+  almacenamiento. Si la cookie de sesión de Cognito venció, el usuario ve el inicio de sesión de Cognito.
 - Pendientes, no hechos: medición de rendimiento (RNF-HU-05), evaluación de accesibilidad (RNF-HU-06), alerta de AWS
   Budgets (el parámetro existe, pero no se indicó ningún correo), T14, la
   demostración dinámica de T10 y los campos de revisión humana de `AI_USAGE.md`.
