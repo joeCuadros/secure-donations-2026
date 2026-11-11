@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  Plataforma de Donaciones Seguras 2026 - Infraestructura Serverless AWS SAM (Stage Academic/Prod) con Amazon Verified Permissions.
+  Plataforma de Donaciones Seguras - Infraestructura Serverless AWS SAM con Amazon Verified Permissions.
 
 Parameters:
   StageName:
@@ -20,7 +20,7 @@ Globals:
   Function:
     Timeout: 10
     MemorySize: 256
-    Runtime: nodejs24.x
+    Runtime: nodejs20.x
     Architectures:
       - x86_64
     Environment:
@@ -34,17 +34,23 @@ Globals:
         COGNITO_CLIENT_ID: !Ref CognitoUserPoolClient
         AVP_POLICY_STORE_ID: !GetAtt PolicyStore.PolicyStoreId
         LOG_LEVEL: info
-    Policies:
-      - Statement:
+
+Resources:
+  # Politica IAM gestionada para autorizacion con Amazon Verified Permissions
+  AVPAuthPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub secure-donations-avp-policy-${StageName}
+      Description: Permite a las funciones Lambda consultar permisos de autorizacion en AVP
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
           - Effect: Allow
             Action:
               - verifiedpermissions:IsAuthorized
             Resource: !GetAtt PolicyStore.Arn
 
-Resources:
-  # ===================================================================
-  # 1. COGNITO USER POOL, DOMAIN, GROUPS, SCOPES & CLIENT
-  # ===================================================================
+  # 1. Cognito User Pool, Domain, Groups, Resource Server y Client
   CognitoUserPool:
     Type: AWS::Cognito::UserPool
     Properties:
@@ -75,7 +81,7 @@ Resources:
     Properties:
       GroupName: GESTOR
       UserPoolId: !Ref CognitoUserPool
-      Description: Grupo con permisos de gestión de proyectos de donación
+      Description: Grupo con permisos de gestion de proyectos de donacion
 
   CognitoDonanteGroup:
     Type: AWS::Cognito::UserPoolGroup
@@ -89,7 +95,7 @@ Resources:
     Properties:
       GroupName: AUDITOR
       UserPoolId: !Ref CognitoUserPool
-      Description: Grupo con permisos de consulta de auditoría y trazabilidad
+      Description: Grupo con permisos de consulta de auditoria y trazabilidad
 
   CognitoResourceServer:
     Type: AWS::Cognito::UserPoolResourceServer
@@ -99,13 +105,13 @@ Resources:
       UserPoolId: !Ref CognitoUserPool
       Scopes:
         - ScopeName: projects.write
-          ScopeDescription: Permite crear y publicar proyectos de donación
+          ScopeDescription: Permite crear y publicar proyectos de donacion
         - ScopeName: donations.write
           ScopeDescription: Permite crear e intencionar donaciones
         - ScopeName: donations.read
           ScopeDescription: Permite consultar historial propio de donaciones
         - ScopeName: audit.read
-          ScopeDescription: Permite consultar logs de auditoría
+          ScopeDescription: Permite consultar logs de auditoria
 
   CognitoUserPoolClient:
     Type: AWS::Cognito::UserPoolClient
@@ -132,9 +138,7 @@ Resources:
       SupportedIdentityProviders:
         - COGNITO
 
-  # ===================================================================
-  # 2. API GATEWAY HTTP API & DEFAULT JWT AUTHORIZER (PEP)
-  # ===================================================================
+  # 2. API Gateway HTTP API y Autorizador JWT por defecto
   HttpApi:
     Type: AWS::Serverless::HttpApi
     Properties:
@@ -163,9 +167,7 @@ Resources:
                 - !Ref CognitoUserPoolClient
             IdentitySource: $request.header.Authorization
 
-  # ===================================================================
-  # 3. TABLAS DYNAMODB
-  # ===================================================================
+  # 3. Tablas DynamoDB
   ProjectsTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -258,15 +260,14 @@ Resources:
           Projection:
             ProjectionType: ALL
 
-  # ===================================================================
-  # 4. FUNCIONES LAMBDA
-  # ===================================================================
+  # 4. Funciones Lambda
   ListProjectsFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../backend/dist
       Handler: projects/api.listProjectsHandler
       Policies:
+        - !Ref AVPAuthPolicy
         - DynamoDBReadPolicy:
             TableName: !Ref ProjectsTable
       Events:
@@ -285,6 +286,7 @@ Resources:
       CodeUri: ../backend/dist
       Handler: projects/api.getProjectHandler
       Policies:
+        - !Ref AVPAuthPolicy
         - DynamoDBReadPolicy:
             TableName: !Ref ProjectsTable
       Events:
@@ -303,6 +305,7 @@ Resources:
       CodeUri: ../backend/dist
       Handler: projects/api.getProjectStatsHandler
       Policies:
+        - !Ref AVPAuthPolicy
         - DynamoDBReadPolicy:
             TableName: !Ref ProjectsTable
       Events:
@@ -321,6 +324,7 @@ Resources:
       CodeUri: ../backend/dist
       Handler: projects/api.createProjectHandler
       Policies:
+        - !Ref AVPAuthPolicy
         - DynamoDBCrudPolicy:
             TableName: !Ref ProjectsTable
         - DynamoDBCrudPolicy:
@@ -342,6 +346,7 @@ Resources:
       CodeUri: ../backend/dist
       Handler: projects/api.publishProjectHandler
       Policies:
+        - !Ref AVPAuthPolicy
         - DynamoDBCrudPolicy:
             TableName: !Ref ProjectsTable
         - DynamoDBCrudPolicy:
@@ -363,6 +368,7 @@ Resources:
       CodeUri: ../backend/dist
       Handler: donations/api.createDonationHandler
       Policies:
+        - !Ref AVPAuthPolicy
         - DynamoDBCrudPolicy:
             TableName: !Ref DonationsTable
         - DynamoDBCrudPolicy:
@@ -388,6 +394,7 @@ Resources:
       CodeUri: ../backend/dist
       Handler: donations/api.simulateDonationHandler
       Policies:
+        - !Ref AVPAuthPolicy
         - DynamoDBCrudPolicy:
             TableName: !Ref DonationsTable
         - DynamoDBCrudPolicy:
@@ -411,6 +418,7 @@ Resources:
       CodeUri: ../backend/dist
       Handler: donations/api.listMyDonationsHandler
       Policies:
+        - !Ref AVPAuthPolicy
         - DynamoDBReadPolicy:
             TableName: !Ref DonationsTable
       Events:
@@ -430,6 +438,7 @@ Resources:
       CodeUri: ../backend/dist
       Handler: audit/api.listAuditLogsHandler
       Policies:
+        - !Ref AVPAuthPolicy
         - DynamoDBReadPolicy:
             TableName: !Ref AuditEventsTable
       Events:
@@ -443,9 +452,7 @@ Resources:
               AuthorizationScopes:
                 - api/audit.read
 
-  # ===================================================================
-  # 5. AMAZON VERIFIED PERMISSIONS (ZERO TRUST POLICY ENGINE)
-  # ===================================================================
+  # 5. Motor de politicas Amazon Verified Permissions
   PolicyStore:
     Type: AWS::VerifiedPermissions::PolicyStore
     Properties:
@@ -483,11 +490,11 @@ Outputs:
     Description: URL Base para llamadas a la API
     Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}
   CognitoUserPoolId:
-    Description: COGNITO_USER_POOL_ID para el .env
+    Description: COGNITO_USER_POOL_ID para variables de entorno
     Value: !Ref CognitoUserPool
   CognitoUserPoolClientId:
-    Description: COGNITO_CLIENT_ID para el .env
+    Description: COGNITO_CLIENT_ID para variables de entorno
     Value: !Ref CognitoUserPoolClient
   VerifiedPermissionsPolicyStoreId:
-    Description: AVP_POLICY_STORE_ID para el .env
+    Description: AVP_POLICY_STORE_ID para variables de entorno
     Value: !GetAtt PolicyStore.PolicyStoreId
