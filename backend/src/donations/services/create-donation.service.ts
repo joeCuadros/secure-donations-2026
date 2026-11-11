@@ -4,20 +4,21 @@ import { env } from '../../shared/config/env.js';
 import type { DonationItem, IdempotencyRecordItem } from '../types.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import { getProjectService } from '../../projects/services/get-project.service.js';
+import { authorizeActionService } from '../../authz/services/avp.service.js';
+import type { AuthenticatedUser } from '../../authz/types.js';
 import { createHash, randomUUID } from 'node:crypto';
 
 export const createDonationService = async (
   projectId: string,
   amountCents: number,
   idempotencyKey: string,
-  donorSub: string
+  user: AuthenticatedUser
 ) => {
-  const pk = `${donorSub}#createDonation#${idempotencyKey}`;
+  const pk = `${user.sub}#createDonation#${idempotencyKey}`;
   const payloadHash = createHash('sha256')
     .update(JSON.stringify({ projectId, amountCents }))
     .digest('hex');
 
-  // Check idempotencia
   const existingRes = await docClient.send(
     new GetCommand({ TableName: env.IDEMPOTENCY_TABLE, Key: { pk }, ConsistentRead: true })
   );
@@ -30,11 +31,10 @@ export const createDonationService = async (
     throw AppError.conflict('La clave de idempotencia ya fue utilizada con otro payload.');
   }
 
-  // Verificar proyecto publicado
   const project = await getProjectService(projectId);
-  if (project.status !== 'PUBLICADO') {
-    throw AppError.conflict('El proyecto no se encuentra publicado.');
-  }
+  
+  // Aserción de autorización externa (Cedar): Valida grupo DONANTE y status PUBLICADO
+  await authorizeActionService(user, 'CreateDonation', 'Project', projectId, { status: project.status });
 
   const now = new Date().toISOString();
   const donationId = `don_${randomUUID().replace(/-/g, '').substring(0, 12)}`;
@@ -42,7 +42,7 @@ export const createDonationService = async (
   const donationItem: DonationItem = {
     donationId,
     projectId,
-    donorSub,
+    donorSub: user.sub,
     amountCents,
     currency: 'PEN',
     status: 'PENDIENTE_SIMULACION',
@@ -68,15 +68,7 @@ export const createDonationService = async (
           {
             Put: {
               TableName: env.IDEMPOTENCY_TABLE,
-              Item: {
-                pk,
-                recordId: idempotencyKey,
-                payloadHash,
-                donationId,
-                responseStatus: 201,
-                responseBody: JSON.stringify(responseDTO),
-                expiresAt,
-              },
+              Item: { pk, recordId: idempotencyKey, payloadHash, donationId, responseStatus: 201, responseBody: JSON.stringify(responseDTO), expiresAt },
               ConditionExpression: 'attribute_not_exists(pk)',
             },
           },

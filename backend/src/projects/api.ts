@@ -1,6 +1,6 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { z } from 'zod';
-import { authorizeUser } from '../authz/api.js';
+import { extractAndVerifyContext } from '../authz/api.js';
 import { buildSuccessResponse } from '../shared/utils/response.js';
 import { handleError } from '../shared/errors/error-handler.js';
 import { listProjectsService } from './services/list-projects.service.js';
@@ -54,9 +54,9 @@ export const getProjectStatsHandler = async (event: APIGatewayProxyEventV2): Pro
 export const createProjectHandler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
   const requestId = event.requestContext.requestId;
   try {
-    const user = authorizeUser(event, 'GESTOR', 'api/projects.write');
+    const user = extractAndVerifyContext(event, 'api/projects.write');
     const body = createProjectSchema.parse(JSON.parse(event.body || '{}'));
-    const result = await createProjectService(body, user.sub);
+    const result = await createProjectService(body, user);
 
     await createAuditLogService({
       eventType: 'PROJECT_EVENT',
@@ -76,9 +76,9 @@ export const createProjectHandler = async (event: APIGatewayProxyEventV2): Promi
 export const publishProjectHandler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
   const requestId = event.requestContext.requestId;
   try {
-    const user = authorizeUser(event, 'GESTOR', 'api/projects.write');
+    const user = extractAndVerifyContext(event, 'api/projects.write');
     const projectId = event.pathParameters?.projectId!;
-    const result = await publishProjectService(projectId);
+    const result = await publishProjectService(projectId, user);
 
     await createAuditLogService({
       eventType: 'PROJECT_EVENT',

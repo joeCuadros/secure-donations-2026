@@ -1,6 +1,6 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { z } from 'zod';
-import { authorizeUser } from '../authz/api.js';
+import { extractAndVerifyContext } from '../authz/api.js';
 import { buildSuccessResponse } from '../shared/utils/response.js';
 import { handleError } from '../shared/errors/error-handler.js';
 import { uuidSchema, amountCentsSchema } from '../shared/schemas/common.schema.js';
@@ -8,7 +8,6 @@ import { createDonationService } from './services/create-donation.service.js';
 import { simulateDonationService } from './services/simulate-donation.service.js';
 import { listMyDonationsService } from './services/list-donations.service.js';
 import { createAuditLogService } from '../audit/services/create-audit.service.js';
-import { AppError } from '../shared/errors/app-error.js';
 
 const createDonationSchema = z.object({
   projectId: z.string().min(1),
@@ -22,14 +21,15 @@ const simulateSchema = z.object({
 export const createDonationHandler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
   const requestId = event.requestContext.requestId;
   try {
-    const user = authorizeUser(event, 'DONANTE', 'api/donations.write');
+    const user = extractAndVerifyContext(event, 'api/donations.write');
 
     const rawHeader = event.headers?.['idempotency-key'] || event.headers?.['Idempotency-Key'];
     const idempotencyKey = uuidSchema.parse(rawHeader);
 
     const body = createDonationSchema.parse(JSON.parse(event.body || '{}'));
 
-    const res = await createDonationService(body.projectId, body.amountCents, idempotencyKey, user.sub);
+    // Se pasa el objeto user completo para la evaluación de AVP en el servicio
+    const res = await createDonationService(body.projectId, body.amountCents, idempotencyKey, user);
 
     await createAuditLogService({
       eventType: 'DONATION_EVENT',
@@ -49,11 +49,11 @@ export const createDonationHandler = async (event: APIGatewayProxyEventV2): Prom
 export const simulateDonationHandler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
   const requestId = event.requestContext.requestId;
   try {
-    const user = authorizeUser(event, 'DONANTE', 'api/donations.write');
+    const user = extractAndVerifyContext(event, 'api/donations.write');
     const donationId = event.pathParameters?.donationId!;
     const body = simulateSchema.parse(JSON.parse(event.body || '{}'));
 
-    const result = await simulateDonationService(donationId, body.result, user.sub);
+    const result = await simulateDonationService(donationId, body.result, user);
 
     await createAuditLogService({
       eventType: 'DONATION_EVENT',
@@ -73,11 +73,11 @@ export const simulateDonationHandler = async (event: APIGatewayProxyEventV2): Pr
 export const listMyDonationsHandler = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
   const requestId = event.requestContext.requestId;
   try {
-    const user = authorizeUser(event, 'DONANTE', 'api/donations.read');
+    const user = extractAndVerifyContext(event, 'api/donations.read');
     const limit = event.queryStringParameters?.limit ? parseInt(event.queryStringParameters.limit, 10) : 20;
     const nextToken = event.queryStringParameters?.nextToken;
 
-    const result = await listMyDonationsService(user.sub, limit, nextToken);
+    const result = await listMyDonationsService(user, limit, nextToken);
     return buildSuccessResponse(200, result);
   } catch (error) {
     return handleError(error, requestId);

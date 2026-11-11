@@ -1,38 +1,41 @@
-import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { PutCommand } from '@aws-sdk/lib-dynamodb';
 import { docClient } from '../../shared/aws/dynamodb.client.js';
 import { env } from '../../shared/config/env.js';
-import type { ProjectItem } from '../types.js';
-import { AppError } from '../../shared/errors/app-error.js';
+import type { CreateProjectDTO, ProjectItem } from '../types.js';
+import { authorizeActionService } from '../../authz/services/avp.service.js';
+import type { AuthenticatedUser } from '../../authz/types.js';
+import { randomUUID } from 'node:crypto';
 
-export const publishProjectService = async (projectId: string) => {
-  const getRes = await docClient.send(
-    new GetCommand({ TableName: env.PROJECTS_TABLE, Key: { projectId } })
-  );
-  const project = getRes.Item as ProjectItem | undefined;
-
-  if (!project) throw AppError.notFound('Proyecto no encontrado.');
-  if (project.status === 'PUBLICADO') throw AppError.conflict('El proyecto ya se encuentra publicado.');
+export const createProjectService = async (
+  input: CreateProjectDTO,
+  user: AuthenticatedUser
+): Promise<ProjectItem> => {
+  // Aserción de autorización externa (Cedar): Valida permiso base para GESTOR
+  await authorizeActionService(user, 'CreateProject');
 
   const now = new Date().toISOString();
+  const projectId = `prj_${randomUUID().replace(/-/g, '').substring(0, 12)}`;
+
+  const item: ProjectItem = {
+    projectId,
+    title: input.title,
+    description: input.description,
+    purpose: input.purpose,
+    goalAmountCents: input.goalAmountCents,
+    confirmedAmountCents: 0,
+    currency: 'PEN',
+    status: 'BORRADOR',
+    createdBy: user.sub,
+    createdAt: now,
+    updatedAt: now,
+  };
+
   await docClient.send(
-    new UpdateCommand({
+    new PutCommand({
       TableName: env.PROJECTS_TABLE,
-      Key: { projectId },
-      UpdateExpression: 'SET #s = :pubStatus, publishedAt = :now, updatedAt = :now',
-      ConditionExpression: '#s = :draftStatus',
-      ExpressionAttributeNames: { '#s': 'status' },
-      ExpressionAttributeValues: {
-        ':pubStatus': 'PUBLICADO',
-        ':draftStatus': 'BORRADOR',
-        ':now': now,
-      },
+      Item: item,
     })
   );
 
-  return {
-    projectId,
-    status: 'PUBLICADO',
-    publishedAt: now,
-    updatedAt: now,
-  };
+  return item;
 };
