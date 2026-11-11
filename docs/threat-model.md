@@ -55,7 +55,7 @@ compartida.
 | S | Interceptación del código de autorización o uso del flujo implícito | Solo flujo `code` (`AllowedOAuthFlows: [code]`), cliente sin secreto, `ExplicitAuthFlows` limitado a SRP y refresh; la SPA usa `response_type=code` con PKCE (oidc-client-ts). La plantilla no tiene un ajuste que **imponga** PKCE: lo aplica el cliente | `CognitoUserPoolClient`; `frontend/src/auth/authConfig.ts` | Plantilla; el flujo completo está **pendiente** de pruebas autenticadas |
 | S | Redirección a un destino no autorizado | Lista de `CallbackURLs` y `LogoutURLs` (CloudFront y `http://localhost:5173`) | `CognitoUserPoolClient` | Plantilla. La URL local queda registrada también en el despliegue académico |
 | S/I | Enumeración de usuarios | `PreventUserExistenceErrors: ENABLED` | `CognitoUserPoolClient` | Plantilla |
-| E | Robo de credenciales de GESTOR o AUDITOR | TOTP (`EnabledMfas: SOFTWARE_TOKEN_MFA`, sin SMS) exigido **por usuario** mediante `admin-set-user-mfa-preference`; el pool es `MfaConfiguration: OPTIONAL` | `CognitoUserPool`; `scripts/create-test-users.sh --enforce-mfa` | **Pendiente** (T14). Riesgo residual: un usuario privilegiado sin TOTP activo entra solo con contraseña |
+| E | Robo de credenciales de GESTOR o AUDITOR | TOTP (`EnabledMfas: SOFTWARE_TOKEN_MFA`, sin SMS) obligatorio para **todos** los usuarios: el pool es `MfaConfiguration: "ON"` y Cognito no emite tokens sin segundo factor | `CognitoUserPool` | Configuración verificada en el despliegue; **pendiente** la prueba T14 con un usuario real |
 | E | Autorregistro de cuentas | La plantilla no define `AdminCreateUserConfig`, por lo que no restringe el registro. Una cuenta sin grupo no recibe ningún permiso porque Verified Permissions deniega por defecto | `CognitoUserPool`; `policies/*.cedar` | Plantilla; el comportamiento real del autorregistro debe confirmarse en el despliegue |
 | E | Un usuario solicita un scope que no corresponde a su rol | Los scopes `api/*` no dependen del grupo: acotan el tipo de token, no el rol. El rol lo decide Cedar (frontera 5) | `CognitoResourceServer`; `policies/*.cedar` | **Pendiente** (T03, T12) |
 | I/R | Robo de tokens y su reutilización | Access e ID token de 15 minutos, refresh token de 1 día, `EnableTokenRevocation: true`; al cerrar sesión la SPA revoca access y refresh token y borra la sesión local | `CognitoUserPoolClient`; `frontend/src/auth/logout.ts` | Plantilla; revocación **pendiente** (T13) |
@@ -169,9 +169,9 @@ administrada no está acotada a los grupos de logs de la pila.
    expirar (≤ 15 min).
 2. **Sin postura de dispositivo, evaluación continua de riesgo ni ZTNA.**
 3. **HTTP API sin WAF.** La limitación del stage (10 solicitudes/s, ráfaga 20) es la única defensa de tasa.
-4. **MFA por usuario, no por claim.** El access token de Cognito no incluye `amr`, por lo que la política de auditoría no
-   comprueba MFA. El pool es `MfaConfiguration: OPTIONAL`: un GESTOR o AUDITOR que no haya activado TOTP puede
-   autenticarse solo con contraseña hasta que un administrador ejecute `--enforce-mfa`.
+4. **MFA exigido en el IdP, no por claim.** El access token de Cognito no incluye `amr`, por lo que la política de
+   auditoría no comprueba MFA. El control está en el pool (`MfaConfiguration: "ON"`), que exige TOTP a todos los
+   usuarios; es más estricto que la matriz de requerimientos, donde el MFA del DONANTE es opcional.
 5. **Tokens en memoria.** Recargar la página obliga a iniciar sesión de nuevo (decisión por CA-NF11.1).
 6. **Almacén de políticas con validación desactivada** (`Mode: "OFF"`); las políticas Cedar están duplicadas entre
    `policies/` y `template.yaml`.

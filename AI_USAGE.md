@@ -57,9 +57,8 @@ validación sintáctica de `template.yaml` y `docs/api.yaml`.
   propiedad por recurso; las pruebas unitarias simulan DynamoDB y Verified Permissions.
 - **Scripts sin ejecutar contra AWS:** `scripts/acceptance.sh` solo se probó con un servidor HTTP local simulado y
   `scripts/create-test-users.sh` solo con una CLI de AWS simulada.
-- **Sin verificar en el despliegue:** el código de estado (401 o 403) que API Gateway devuelve a un ID token; si la
-  interfaz alojada de Cognito permite registrar TOTP con MFA opcional; la cabecera `Permissions-Policy`; el comportamiento
-  del autorregistro de usuarios; las pruebas de rendimiento (RNF-HU-05) y de accesibilidad (RNF-HU-06).
+- **Sin verificar en el despliegue:** el código de estado (401 o 403) que API Gateway devuelve a un ID token; el
+  registro de TOTP en el primer inicio de sesión con MFA obligatorio (T14); las pruebas de rendimiento (RNF-HU-05) y de accesibilidad (RNF-HU-06).
 - **Contenido generado que el equipo debe comprender y defender:** la IA puede producir descripciones plausibles pero
   incorrectas; cada afirmación del modelo de amenazas debe contrastarse con el código antes de la sustentación.
 - **Políticas IAM:** las políticas propias de las funciones no usan comodines; el rol administrado
