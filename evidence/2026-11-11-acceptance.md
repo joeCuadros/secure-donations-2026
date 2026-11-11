@@ -76,3 +76,32 @@ estaban verificados contra servicios reales:
   scope; T03 lo comprueba.
 - La vigencia de 15 minutos del access token (CA-03.3) no alcanza para copiar a mano los tokens de
   varios usuarios con MFA; por eso se añadió `scripts/refresh-tokens.sh`.
+
+## Segunda ejecución, tras el endurecimiento (20:35 UTC)
+
+`scripts/acceptance.sh` se repitió después de desplegar la auditoría de rechazos, el esquema Cedar en
+modo `STRICT` y la nueva política `ReadMyDonations`. Resultado idéntico: **11 PASS, 0 FAIL, 3 SKIPPED**
+(T10, T13 y T14 son manuales). No hubo regresión. Proyecto de prueba: `prj_4e5d239613b5`.
+
+### Rechazos registrados en `AuditEvents`
+
+Consulta al índice `AllAuditLogsIndex` inmediatamente después de la ejecución. Los 35 eventos más
+recientes se reparten en 17 `SUCCESS`, 15 `FAILURE` y 3 `DENIED`. Extracto (hora UTC):
+
+```text
+20:35:20.502  DONATION_EVENT  LIST_MY_DONATIONS       DENIED   actor_71b3623f  n/a                (T12)
+20:35:18.302  DONATION_EVENT  SIMULATE_DONATION       DENIED   actor_95ee128d  don_411ae3363a09   (T09)
+20:35:17.024 – 20:35:17.175   SIMULATE_DONATION       FAILURE  actor_0420370a  don_e322f7e17fc2   (T08, 9 eventos)
+20:35:16.962  DONATION_EVENT  SIMULATE_DONATION       SUCCESS  actor_0420370a  don_e322f7e17fc2   (T08, 1 evento)
+20:35:10.632  DONATION_EVENT  CREATE_DONATION_INTENT  FAILURE  actor_0420370a  n/a                (T07)
+20:35:04.665 – 20:35:07.528   CREATE_DONATION_INTENT  FAILURE  actor_0420370a  n/a                (T04, 5 eventos)
+20:35:03.494  PROJECT_EVENT   CREATE_PROJECT          DENIED   actor_0420370a  n/a                (T03)
+```
+
+La auditoría reproduce T08 con exactitud: una confirmación `SUCCESS` y nueve `FAILURE` sobre la misma
+donación. Cada evento contiene únicamente `timestamp`, `requestId`, `eventId`, `eventType`, `action`,
+`outcome`, `actorRef` (seudónimo), `resourceRef` y las claves de la tabla; no hay tokens, importes ni
+el `sub` en claro (CA-10.2).
+
+Observación: la repetición idempotente de T06 genera un segundo evento `SUCCESS` para la misma
+donación. No afecta a los datos de negocio, pero la auditoría cuenta dos eventos para una sola creación.
