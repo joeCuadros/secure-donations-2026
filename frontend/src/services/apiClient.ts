@@ -1,6 +1,5 @@
-import { userManager } from "../auth/AuthProvider";
-
-const BASE_URL = import.meta.env.VITE_API_URL?.trim().replace(/\/+$/, "");
+import { userManager } from "../auth/userManager";
+import { env } from "../config/env";
 
 interface ApiClientOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined | null>;
@@ -38,10 +37,6 @@ export const apiClient = async <T>(
   endpoint: string,
   options: ApiClientOptions = {}
 ): Promise<T> => {
-  if (!BASE_URL) {
-    throw new Error("Falta configurar VITE_API_URL en el archivo .env.");
-  }
-
   const { params, ...fetchOptions } = options;
   const headers = new Headers(fetchOptions.headers);
   let token = await getAccessToken();
@@ -52,7 +47,7 @@ export const apiClient = async <T>(
   }
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const url = new URL(`${BASE_URL}${endpoint}`);
+  const url = new URL(`${env.apiUrl}${endpoint}`);
   Object.entries(params ?? {}).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== "") {
       url.searchParams.set(key, String(value));
@@ -71,7 +66,7 @@ export const apiClient = async <T>(
         headers.set("Authorization", `Bearer ${token}`);
         response = await fetch(url, { ...fetchOptions, headers });
       }
-    } catch (err) {
+    } catch {
       // Retiene el error de red o de renovación silenciosa y procede a lanzar la excepción base
     }
   }

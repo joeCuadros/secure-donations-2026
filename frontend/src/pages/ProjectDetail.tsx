@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Loader, TrendingUp, Wallet } from "lucide-react";
 import { Can } from "../components/Can";
+import { SimulationBanner } from "../components/SimulationBanner";
 import { donationsApi } from "../services/donations/api";
 import { projectsApi } from "../services/projects/api";
 import type { Project, ProjectStatsResponse } from "../services/projects/types";
@@ -50,6 +51,8 @@ export const ProjectDetail = () => {
   }, [id, navigate, toast]);
 
   useEffect(() => {
+    // Carga inicial de datos: la actualización de estado ocurre tras esperar la respuesta de la API.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchData();
   }, [fetchData]);
 
@@ -181,6 +184,10 @@ export const ProjectDetail = () => {
                   <p className="mt-2 text-sm leading-6 text-slate-500">
                     Registra el monto que deseas aportar en soles.
                   </p>
+                </div>
+
+                <div className="mb-4">
+                  <SimulationBanner />
                 </div>
 
                 <form onSubmit={handleDonate} className="space-y-4">
