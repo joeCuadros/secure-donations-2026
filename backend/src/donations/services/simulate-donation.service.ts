@@ -1,13 +1,15 @@
 import { GetCommand, TransactWriteCommand } from '@aws-sdk/lib-dynamodb';
 import { docClient } from '../../shared/aws/dynamodb.client.js';
 import { env } from '../../shared/config/env.js';
-import type { DonationItem, DonationStatus } from '../types.js';
+import type { DonationItem } from '../types.js';
 import { AppError } from '../../shared/errors/app-error.js';
+import { authorizeActionService } from '../../authz/services/avp.service.js';
+import type { AuthenticatedUser } from '../../authz/types.js';
 
 export const simulateDonationService = async (
   donationId: string,
   result: 'CONFIRMADA_SIMULADA' | 'RECHAZADA_SIMULADA',
-  donorSub: string
+  user: AuthenticatedUser
 ) => {
   if (env.STAGE !== 'academic') {
     throw AppError.forbidden('Endpoint disponible únicamente en el stage academic.');
@@ -18,9 +20,15 @@ export const simulateDonationService = async (
   );
   const donation = getRes.Item as DonationItem | undefined;
 
-  if (!donation || donation.donorSub !== donorSub) {
+  if (!donation) {
     throw AppError.notFound('Donación no encontrada.');
   }
+
+  // Aserción de autorización externa (Cedar) - Reemplaza aserción de propiedad local
+  await authorizeActionService(user, 'SimulateDonation', 'Donation', donationId, {
+    donorSub: donation.donorSub,
+    status: donation.status
+  });
 
   if (donation.status !== 'PENDIENTE_SIMULACION') {
     throw AppError.conflict('La donación ya se encuentra en un estado terminal.');
@@ -38,7 +46,7 @@ export const simulateDonationService = async (
         ExpressionAttributeValues: {
           ':targetStatus': result,
           ':pending': 'PENDIENTE_SIMULACION',
-          ':sub': donorSub,
+          ':sub': user.sub,
           ':now': now,
         },
       },
