@@ -4,6 +4,8 @@ import { buildSuccessResponse, parseJsonBody } from '../shared/utils/index.js';
 import { withAccessLog } from '../shared/logger/access-log.js';
 import { DEFAULT_PAGE_SIZE, paginationQuerySchema } from '../shared/schemas/common.schema.js';
 import { listProjectsService } from './services/list-projects.service.js';
+import { listDraftProjectsService } from './services/list-draft-projects.service.js';
+import { authorizeActionService } from '../authz/services/avp.service.js';
 import { getProjectService } from './services/get-project.service.js';
 import { getProjectStatsService } from './services/stats-project.service.js';
 import { createProjectService } from './services/create-project.service.js';
@@ -57,6 +59,22 @@ export const publishProjectHandler = withAuditedAccessLog(
     const projectId = event.pathParameters?.projectId!;
     const result = await publishProjectService(projectId, user);
 
+    return buildSuccessResponse(200, result);
+  }
+);
+
+// HU-08: cualquier GESTOR ve todos los borradores, no solo los propios. La matriz de roles asigna la gestión de
+// proyectos al rol GESTOR y PublishProject ya permite a cualquier GESTOR publicar cualquier proyecto.
+// La respuesta no incluye `createdBy`. Solo se auditan los rechazos: las lecturas exitosas no generan evento.
+export const listDraftProjectsHandler = withAuditedAccessLog(
+  'listDraftProjects',
+  { eventType: 'PROJECT_EVENT', action: 'LIST_DRAFT_PROJECTS', recordSuccess: false },
+  async (event) => {
+    const user = extractAndVerifyContext(event, 'api/projects.write');
+    await authorizeActionService(user, 'ListDraftProjects');
+
+    const { limit = DEFAULT_PAGE_SIZE, nextToken } = paginationQuerySchema.parse(event.queryStringParameters ?? {});
+    const result = await listDraftProjectsService(limit, nextToken);
     return buildSuccessResponse(200, result);
   }
 );

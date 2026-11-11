@@ -23,7 +23,7 @@ flowchart TD
   CF -->|"OAC (SigV4)"| S3[("S3 privado<br/>SPA React")]
   U -->|"Authorization Code + PKCE"| IDP["Cognito User Pool<br/>grupos DONANTE / GESTOR / AUDITOR<br/>TOTP por usuario (Policy Administrator)"]
   U -->|"Bearer access token"| APIG["API Gateway HTTP API<br/>JWT authorizer + scopes por ruta<br/>(PEP 1)"]
-  APIG --> FN["9 funciones Lambda Node.js 24<br/>un rol IAM por función<br/>(PEP 2: claims verificados + decisión del PE)"]
+  APIG --> FN["10 funciones Lambda Node.js 24<br/>un rol IAM por función<br/>(PEP 2: claims verificados + decisión del PE)"]
   FN -->|IsAuthorized| AVP["Verified Permissions<br/>políticas Cedar (Policy Engine)"]
   FN --> DB[("DynamoDB<br/>Projects / Donations /<br/>Idempotency / AuditEvents")]
   FN --> LOG["CloudWatch Logs<br/>JSON, retención 14 días"]
@@ -41,7 +41,7 @@ flowchart TD
 | Entrega | S3 privado + CloudFront con OAC y política de cabeceras de seguridad | `infra/template.yaml` |
 | Identidad | Cognito User Pool, dominio alojado, grupos, scopes `api/*`, app client público (sin secreto, solo flujo `code`); la SPA usa PKCE | `infra/template.yaml` |
 | API | API Gateway HTTP API con JWT authorizer por defecto, scopes por ruta, CORS restringido y limitación de tasa | `infra/template.yaml` |
-| Lógica | 9 funciones Lambda (TypeScript, Node.js 24, empaquetadas con esbuild) | `backend/src/` |
+| Lógica | 10 funciones Lambda (TypeScript, Node.js 24, empaquetadas con esbuild) | `backend/src/` |
 | Autorización | Verified Permissions con validación `STRICT` y esquema embebido: una política Cedar por regla; Lambda construye el contexto desde claims verificados | `policies/`, `backend/src/authz/` |
 | Datos | 4 tablas DynamoDB bajo demanda; idempotencia y transiciones con `TransactWriteItems` condicionado | `backend/src/donations/` |
 
@@ -140,8 +140,18 @@ aws cloudfront create-invalidation --distribution-id "$(out CloudFrontDistributi
 ```
 
 Las variables `VITE_*` no son secretas (URLs e identificadores públicos), pero no se versionan archivos `.env`.
-Abra la URL de la salida `FrontendUrl`. Los tokens viven solo en memoria: recargar la página exige iniciar sesión de
-nuevo.
+Abra la URL de la salida `FrontendUrl`. Los tokens viven solo en memoria (CA-NF11.1) y no se guardan en ningún
+almacenamiento. Al recargar la página (F5) la SPA los pierde, pero si en esa pestaña había una sesión inicia una sola vez
+un nuevo flujo Authorization Code + PKCE: mientras la sesión del dominio alojado de Cognito siga vigente, el usuario vuelve
+a la misma ruta sin escribir credenciales; si venció, Cognito muestra su inicio de sesión habitual. Para ello solo se guarda
+en `sessionStorage` una bandera booleana, sin token, identificador ni claim, que se borra al cerrar sesión y ante cualquier
+error de autenticación.
+
+**Borradores (HU-08).** Un GESTOR crea proyectos en estado BORRADOR y los publica desde la sección «Borradores»
+(`/projects/drafts`), que consume `GET /v1/projects/drafts`. La ruta exige el scope `api/projects.write` y que Verified
+Permissions autorice la acción `ListDraftProjects` al grupo GESTOR; cualquier GESTOR ve todos los borradores. El
+enlace de la navegación solo es una ayuda de UX: el backend decide. El catálogo público y el detalle siguen sin exponer
+borradores (CA-01.2, CA-02.2).
 
 ## Usuarios de prueba y MFA
 
@@ -169,7 +179,7 @@ la prueba T14. El modo `--enforce-mfa` del script ya no es necesario.
 **Locales (no usan AWS):**
 
 ```bash
-cd backend && npm ci && npm run typecheck && npm test      # 184 pruebas Vitest
+cd backend && npm ci && npm run typecheck && npm test      # 205 pruebas Vitest
 cd frontend && npm ci && npm run lint && npm run build
 ```
 
@@ -178,7 +188,7 @@ cd frontend && npm ci && npm run lint && npm run build
 `npm audit --audit-level=high`) y *frontend* (lint, build y `npm audit --audit-level=high`). No hay paso de despliegue
 ni credenciales de AWS.
 
-**Aceptación contra el despliegue ([`scripts/acceptance.sh`](scripts/acceptance.sh)).** Ejecuta T01–T12 con `curl`.
+**Aceptación contra el despliegue ([`scripts/acceptance.sh`](scripts/acceptance.sh)).** Ejecuta T01–T12 y T03b (borradores solo para GESTOR) con `curl`.
 Lee los tokens solo de variables de entorno (`DONOR_ACCESS_TOKEN`, `DONOR_ID_TOKEN`, `DONOR2_ACCESS_TOKEN`,
 `MANAGER_ACCESS_TOKEN`), no los imprime, informa `SKIPPED` cuando falta un token y termina con código distinto de cero
 si alguna prueba falla. La cabecera del script explica cómo obtener los tokens sin automatizar el ingreso de
@@ -238,7 +248,7 @@ no debe presentarse como superada.
 │   └── threat-model.md        # STRIDE por frontera + mapeo NIST SP 800-207
 ├── evidence/                  # Evidencias sanitizadas de las pruebas
 ├── scripts/
-│   ├── acceptance.sh          # T01–T12 contra el despliegue
+│   ├── acceptance.sh          # T01–T12 y T03b contra el despliegue
 │   └── create-test-users.sh   # usuarios de prueba y TOTP
 ├── requirements.md
 ├── design.md
@@ -258,7 +268,7 @@ no debe presentarse como superada.
   `DONANTE`: la propiedad del historial se garantiza porque la consulta usa el `sub` del token como clave y no acepta
   identificadores del cliente.
 - `AuditEvents` registra las escrituras exitosas y los rechazos posteriores a la autenticación (`DENIED`, `FAILURE`,
-  `ERROR`) de los seis handlers protegidos; no registra consultas exitosas ni las solicitudes que API Gateway rechaza
+  `ERROR`) de los siete handlers protegidos; no registra consultas exitosas ni las solicitudes que API Gateway rechaza
   antes de invocar a Lambda.
 - Los permisos de logs de Lambda vienen del rol administrado `AWSLambdaBasicExecutionRole`.
 

@@ -96,6 +96,48 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /v1/projects/drafts:
+    get:
+      tags: [Proyectos]
+      summary: Listar los proyectos en borrador (solo GESTOR)
+      description: |
+        Solo el grupo GESTOR, autorizado por Verified Permissions con la acción `ListDraftProjects`; la ruta
+        exige además el scope `api/projects.write`, de modo que un ID token es rechazado. Cualquier GESTOR ve
+        todos los borradores, igual que cualquier GESTOR puede publicar cualquier proyecto. Devuelve únicamente
+        proyectos en estado BORRADOR, del más reciente al más antiguo, con la misma paginación que el catálogo
+        público (`limit` y `nextToken`), y no incluye `createdBy` ni otros identificadores de usuario.
+
+        Es una ruta estática: API Gateway le da prioridad sobre `/v1/projects/{projectId}`. Ningún proyecto
+        puede llamarse `drafts`, porque los identificadores los genera el servidor con el formato
+        `prj_<12 hex>`.
+
+        Las consultas rechazadas después de autenticar (403, 400, 5xx) registran un evento de auditoría
+        `LIST_DRAFT_PROJECTS` de tipo `PROJECT_EVENT`; las consultas exitosas no generan evento. Los
+        borradores siguen sin ser visibles en las rutas públicas (404 en el detalle, ausentes del catálogo).
+      operationId: listDraftProjects
+      security:
+        - CognitoBearer: [api/projects.write]
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/NextToken'
+      responses:
+        '200':
+          description: Página de proyectos BORRADOR (puede ser una lista vacía).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DraftProjectListResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /v1/projects/{projectId}:
     get:
       tags: [Proyectos]
@@ -606,6 +648,52 @@ components:
           type: [string, 'null']
           description: Token para la página siguiente; `null` si no hay más resultados.
 
+    DraftProjectSummary:
+      type: object
+      description: Elemento de la lista de borradores; no incluye descripción ni `createdBy`.
+      required:
+        - projectId
+        - title
+        - purpose
+        - goalAmountCents
+        - confirmedAmountCents
+        - currency
+        - status
+        - createdAt
+      properties:
+        projectId:
+          type: string
+          examples: [prj_4a8f9c12e345]
+        title:
+          type: string
+        purpose:
+          type: string
+        goalAmountCents:
+          type: integer
+        confirmedAmountCents:
+          type: integer
+        currency:
+          type: string
+          enum: [PEN]
+        status:
+          type: string
+          enum: [BORRADOR]
+        createdAt:
+          type: string
+          format: date-time
+
+    DraftProjectListResponse:
+      type: object
+      required: [items, nextToken]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DraftProjectSummary'
+        nextToken:
+          type: [string, 'null']
+          description: Token para la página siguiente; `null` si no hay más resultados.
+
     ProjectStatsResponse:
       type: object
       required: [projectId, goalAmountCents, confirmedAmountCents, currency, progress]
@@ -772,7 +860,7 @@ components:
         action:
           type: string
           description: Acciones emitidas actualmente por los handlers protegidos.
-          examples: [CREATE_PROJECT, PUBLISH_PROJECT, CREATE_DONATION_INTENT, SIMULATE_DONATION, LIST_MY_DONATIONS, LIST_AUDIT_LOGS]
+          examples: [CREATE_PROJECT, PUBLISH_PROJECT, LIST_DRAFT_PROJECTS, CREATE_DONATION_INTENT, SIMULATE_DONATION, LIST_MY_DONATIONS, LIST_AUDIT_LOGS]
         resourceRef:
           type: string
           description: |

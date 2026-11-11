@@ -10,7 +10,7 @@ namespace SecureDonations {
   };
 
   // Singleton sin atributos para las acciones que no operan sobre una entidad concreta
-  // (CreateProject, ReadMyDonations, ReadAuditLogs). Id: "secure-donations".
+  // (CreateProject, ListDraftProjects, ReadMyDonations, ReadAuditLogs). Id: "secure-donations".
   entity Application;
 
   // `status` es opcional: PublishProject autoriza antes de leer el proyecto y no lo envía.
@@ -51,6 +51,11 @@ namespace SecureDonations {
   };
 
   action "ReadAuditLogs" appliesTo {
+    principal: User,
+    resource: Application
+  };
+
+  action "ListDraftProjects" appliesTo {
     principal: User,
     resource: Application
   };

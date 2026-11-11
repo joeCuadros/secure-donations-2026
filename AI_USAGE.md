@@ -36,7 +36,7 @@ Defectos que el asistente identificó durante el análisis y que se corrigieron 
 | 3 | Tres políticas Cedar en un único recurso `AWS::VerifiedPermissions::Policy`, que admite una sola sentencia | Un recurso por política |
 | 4 | `Mode: OFF` sin comillas: YAML lo interpreta como booleano `false` | `Mode: "OFF"` |
 | 5 | `TransactionCanceledException` sin capturar: una carrera producía 500 | Se traduce a 409 (`backend/src/shared/errors/dynamo-errors.ts`) |
-| 6 | Tokens guardados en `sessionStorage` | Tokens solo en memoria (`frontend/src/auth/authConfig.ts`); `sessionStorage` solo conserva el estado transitorio de PKCE |
+| 6 | Tokens guardados en `sessionStorage` | Tokens solo en memoria (`frontend/src/auth/authConfig.ts`); `sessionStorage` solo conserva el estado transitorio de PKCE y una bandera booleana de continuidad de sesión (`frontend/src/auth/sessionMarker.ts`), nunca un token |
 
 En la redacción de la entrega final se detectaron además, y se reportan en lugar de corregirse en el código: el detalle
 público de un proyecto devuelve `createdBy` (`sub` del gestor), y `docs/api.yaml` estaba codificado en UTF-16 y no

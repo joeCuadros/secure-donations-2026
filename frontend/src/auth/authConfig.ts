@@ -18,7 +18,8 @@ export const oidcConfig: UserManagerSettings = {
   loadUserInfo: true,
   filterProtocolClaims: true,
   revokeTokensOnSignout: true,
-  // CA-NF11.1: los tokens viven solo en memoria. Recargar la página exige iniciar sesión de nuevo.
+  // CA-NF11.1: los tokens viven solo en memoria y se pierden al recargar la página. SessionResume los recupera
+  // con un nuevo flujo PKCE mientras la sesión de Cognito siga vigente; no se guarda ningún token.
   userStore: new WebStorageStateStore({ store: new InMemoryWebStorage() }),
   // El estado transitorio de PKCE debe sobrevivir a la redirección hacia Cognito, por eso usa sessionStorage.
   stateStore: new WebStorageStateStore({ store: window.sessionStorage }),

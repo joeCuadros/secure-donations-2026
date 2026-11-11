@@ -1,11 +1,12 @@
 import { Link, NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "react-oidc-context";
-import { LayoutDashboard, List, LogOut, Shield } from "lucide-react";
+import { FileText, LayoutDashboard, List, LogOut, Shield } from "lucide-react";
 import { hasPermission } from "../utils/permissions";
 import { logout } from "../auth/logout";
 
 const navItems = [
   { name: "Proyectos", path: "/", icon: LayoutDashboard, scope: undefined },
+  { name: "Borradores", path: "/projects/drafts", icon: FileText, scope: "api/projects.write" },
   { name: "Mis donaciones", path: "/donations", icon: List, scope: "api/donations.read" },
   { name: "Auditoría", path: "/audit", icon: Shield, scope: "api/audit.read" },
 ];

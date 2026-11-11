@@ -12,6 +12,10 @@ export const projectsApi = {
   list: (params?: ListProjectsParams) =>
     apiClient<ProjectListResponse>("/v1/projects", { params }),
 
+  // Solo GESTOR (api/projects.write): el backend decide; el borrador no aparece en el catálogo público.
+  listDrafts: (params?: ListProjectsParams) =>
+    apiClient<ProjectListResponse>("/v1/projects/drafts", { params }),
+
   get: (projectId: string) =>
     apiClient<Project>(`/v1/projects/${encodeURIComponent(projectId)}`),
 
