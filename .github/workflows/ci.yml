@@ -1,0 +1,87 @@
+name: CI
+
+# CA-NF08.1: lint, typecheck, pruebas y build en cada pull request y en cada push a main.
+# No hay paso de despliegue ni credenciales de AWS: el despliegue se hace manualmente (ver README.md).
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (typecheck, test, build, audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: npm
+          cache-dependency-path: ./backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test (with coverage)
+        run: npm run test:coverage
+        env:
+          NODE_ENV: test
+          AWS_REGION: us-east-1
+          STAGE: academic
+          PROJECTS_TABLE: Projects-test
+          DONATIONS_TABLE: Donations-test
+          IDEMPOTENCY_TABLE: Idempotency-test
+          AUDIT_TABLE: AuditEvents-test
+          LOG_LEVEL: info
+
+      - name: Build
+        run: npm run build
+
+      # Falla el job si hay vulnerabilidades de severidad alta o critica en las dependencias.
+      - name: Dependency audit (high)
+        run: npm audit --audit-level=high
+
+  frontend:
+    name: Frontend (lint, build, audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: npm
+          cache-dependency-path: ./frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      # Falla el job si hay vulnerabilidades de severidad alta o critica en las dependencias.
+      - name: Dependency audit (high)
+        run: npm audit --audit-level=high

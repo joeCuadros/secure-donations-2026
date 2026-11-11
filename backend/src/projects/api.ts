@@ -25,8 +25,9 @@ export const listProjectsHandler = withAccessLog('listProjects', async (event) =
 
 export const getProjectHandler = withAccessLog('getProject', async (event) => {
   const projectId = event.pathParameters?.projectId!;
-  const result = await getProjectService(projectId);
-  return buildSuccessResponse(200, result);
+  // La vista pública no expone el identificador del gestor que creó el proyecto (CA-02.1, CA-09.2).
+  const { createdBy: _createdBy, ...publicProject } = await getProjectService(projectId);
+  return buildSuccessResponse(200, publicProject);
 });
 
 export const getProjectStatsHandler = withAccessLog('getProjectStats', async (event) => {
