@@ -1,2 +1,7 @@
 # Los scripts de shell deben conservar saltos de linea LF aunque el repositorio se clone en Windows.
 *.sh text eol=lf
+
+# LF tambien en la plantilla y las politicas Cedar: las pruebas de backend/tests/authz las leen como texto
+# y fallan con CRLF (Git en Windows con core.autocrlf=true).
+infra/*.yaml text eol=lf
+policies/* text eol=lf

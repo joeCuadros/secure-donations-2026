@@ -88,6 +88,27 @@ La ruta `POST /v1/donations/{donationId}/simulate` y su función solo existen en
 - **Alerta de presupuesto (CA-NF09.1):** despliegue con `BudgetAlertEmail=<correo>` para crear un presupuesto mensual de
   1 USD con aviso al 80 % del gasto real, o cree una alerta equivalente en la consola de AWS Budgets.
 
+## Despliegue con un solo comando
+
+```bash
+git checkout main && git pull
+aws login
+scripts/deploy.sh --dry-run     # compila, muestra el change set y lo elimina sin aplicarlo
+scripts/deploy.sh               # compila, muestra el change set, pide confirmación, aplica y publica el frontend
+```
+
+El script recompila el backend desde el commit actual antes de empaquetar: `sam deploy` sube `backend/dist` tal como
+está, y un `dist` desactualizado dejó sin handler a `GET /v1/projects/drafts` el 2026-11-12. Además exige estar en
+`origin/main` sin cambios sin confirmar, **se detiene si el change set reemplaza o elimina** el user pool, el cliente o el
+dominio de Cognito, una tabla, el policy store o el bucket, y al terminar comprueba que el catálogo responde 200 y que
+una ruta protegida sin token responde 401. Opciones: `--yes`, `--backend-only`, `--frontend-only`, `--allow-branch`
+(ver `scripts/deploy.sh --help`). En Git Bash, si `aws` o `sam` no están en el `PATH`, use `AWS_CMD` y `SAM_CMD`.
+
+**Por qué no es un despliegue automático en cada push.** La política de la organización (SCP) deniega
+`iam:CreateOpenIDConnectProvider` en la cuenta, por lo que GitHub Actions no puede asumir un rol por OIDC; la alternativa,
+guardar llaves de acceso permanentes en GitHub, contradice la regla de credenciales temporales. El despliegue queda en
+manos de una persona (design.md §10).
+
 ## Despliegue paso a paso
 
 ```bash
@@ -196,7 +217,7 @@ cd frontend && npm ci && npm run lint && npm run build
 **CI (GitHub Actions, [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).** En cada pull request y en cada push a
 `main` ejecuta dos trabajos con Node 24 y `npm ci`: *backend* (typecheck, pruebas con cobertura, build y
 `npm audit --audit-level=high`) y *frontend* (lint, build y `npm audit --audit-level=high`). No hay paso de despliegue
-ni credenciales de AWS.
+ni credenciales de AWS: el despliegue lo hace una persona con `scripts/deploy.sh` (ver «Despliegue con un solo comando»).
 
 **Aceptación contra el despliegue ([`scripts/acceptance.sh`](scripts/acceptance.sh)).** Ejecuta T01–T12 y T03b (borradores solo para GESTOR) con `curl`.
 Lee los tokens solo de variables de entorno (`DONOR_ACCESS_TOKEN`, `DONOR_ID_TOKEN`, `DONOR2_ACCESS_TOKEN`,
