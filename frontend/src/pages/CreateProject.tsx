@@ -85,6 +85,33 @@ export const CreateProject = () => {
     }
   };
 
+  const handleAmountChange = (rawValue: string) => {
+    const normalized = rawValue.replace(",", ".");
+
+    // Permite vaciar el campo para poder borrar con Backspace
+    if (normalized === "") {
+      updateField("targetAmount", "");
+      return;
+    }
+
+    // Solo permite numeros >= 1 con máximo 2 decimales
+    if (!/^[1-9]\d*(\.\d{0,2})?$/.test(normalized)) return;
+
+    updateField("targetAmount", normalized);
+  };
+
+  const handleAmountBlur = () => {
+    if (!formData.targetAmount) return;
+
+    const numericValue = Number(formData.targetAmount);
+    if (Number.isNaN(numericValue) || numericValue < 1) {
+      updateField("targetAmount", "1.00");
+      return;
+    }
+
+    updateField("targetAmount", numericValue.toFixed(2));
+  };
+
   if (createdProject) {
     return (
       <section className="mx-auto w-full max-w-2xl space-y-6">
@@ -225,7 +252,10 @@ export const CreateProject = () => {
           </div>
 
           <div>
-            <label htmlFor="targetAmount" className="mb-1.5 block text-sm font-semibold text-slate-700">
+            <label
+              htmlFor="targetAmount"
+              className="mb-1.5 block text-sm font-semibold text-slate-700"
+            >
               Meta de recaudación (PEN)
             </label>
             <div className="relative">
@@ -235,20 +265,19 @@ export const CreateProject = () => {
               <input
                 id="targetAmount"
                 name="targetAmount"
-                type="number"
-                required
-                min="0.01"
-                step="0.01"
+                type="text"
                 inputMode="decimal"
+                required
+                pattern="^[1-9]\d*(\.\d{1,2})?$"
+                title="Ingresa un monto válido mayor o igual a 1.00 (máximo 2 decimales)"
+                autoComplete="off"
                 value={formData.targetAmount}
-                onChange={(event) => updateField("targetAmount", event.target.value)}
+                onChange={(event) => handleAmountChange(event.target.value)}
+                onBlur={handleAmountBlur}
                 className={`${inputClassName} pl-11`}
                 placeholder="1000.00"
               />
             </div>
-            <p className="mt-1.5 text-xs text-slate-400">
-              La API recibe el valor convertido a céntimos.
-            </p>
           </div>
 
           <button
