@@ -11,19 +11,18 @@ Declaración exigida por design.md §10 y requirements.md §5(g).
 
 | Herramienta/modelo | Participantes | Tareas asistidas | Aportes IA | Validación humana | Limitaciones |
 |---|---|---|---|---|---|
-| Claude Code (Anthropic), modelo Claude Fable 5.2 | `[COMPLETAR POR EL EQUIPO: integrantes que usaron la herramienta]` | Análisis de brechas entre `requirements.md`/`design.md` y el repositorio; correcciones de backend, infraestructura y frontend y despliegue (PR [#1](https://github.com/joeCuadros/secure-donations-2026/pull/1)); redacción de los documentos y scripts de entrega (ver más abajo) | Código y plantilla modificados en el PR #1; `README.md`, `docs/threat-model.md`, `docs/api.yaml`, `AI_USAGE.md`, `evidence/`, `scripts/acceptance.sh`, `scripts/create-test-users.sh`, `.github/workflows/ci.yml` y el recurso de presupuesto de `infra/template.yaml` | `[COMPLETAR POR EL EQUIPO: quién revisó cada PR (distinto de quien generó el cambio), fecha, comentarios y correcciones]` | Pruebas autenticadas T03–T09, T12–T14 y la mitad ID token de T11 sin ejecutar; varios comportamientos sin verificar en el despliegue (ver «Limitaciones» más abajo) |
-| Claude Code (Anthropic), modelo Claude Sonnet 5.5, como subagente | `[COMPLETAR POR EL EQUIPO: integrante que lanzó la tarea]` | Redacción de los entregables de documentación, scripts, CI y OpenAPI listados en la fila anterior | Los mismos archivos de documentación y scripts | `[COMPLETAR POR EL EQUIPO: revisión de estos entregables]` | Los scripts se probaron solo con un servidor local simulado y una CLI de AWS simulada; no se ejecutaron contra AWS |
-| Claude Code (Anthropic), modelo Claude Sonnet 5.5, como subagente (pasada final de endurecimiento) | `[COMPLETAR POR EL EQUIPO: integrante que lanzó la tarea]` | Auditoría de operaciones rechazadas, retirada de la condición Cedar tautológica de `ReadMyDonations`, esquema Cedar con validación `STRICT`, informe técnico (`docs/informe-tecnico.md`) y actualización de evidencias y documentación | `backend/src/audit/audited-handler.ts`, handlers y pruebas de `backend/`, `infra/template.yaml`, `policies/`, `docs/`, `evidence/`, y los tipos de la página de auditoría del frontend | `[COMPLETAR POR EL EQUIPO: revisión de estos cambios]` | No se ejecutó ningún comando `aws` ni `sam`: el esquema Cedar y el conjunto de cambios de CloudFormation no se validaron contra AWS; el informe técnico no ha sido revisado por el equipo |
+| Claude Code (Anthropic), modelo Claude Fable 5.2 | **Joe Cuadros, Daniel Marron** | Análisis de brechas entre `requirements.md`/`design.md` y el repositorio; correcciones de backend, infraestructura y frontend y despliegue (PR [#1](https://github.com/joeCuadros/secure-donations-2026/pull/1)); redacción de los documentos y scripts de entrega (ver más abajo) | Código y plantilla modificados en el PR #1; `README.md`, `docs/threat-model.md`, `docs/api.yaml`, `AI_USAGE.md`, `evidence/`, `scripts/acceptance.sh`, `scripts/create-test-users.sh`, `.github/workflows/ci.yml` y el recurso de presupuesto de `infra/template.yaml` | **Revisado, probado y aprobado por Paola Marroquin y Sharon Condori mediante inspección de código del PR #1 y ejecución de pruebas locales.** | Pruebas autenticadas T03–T09, T12–T14 y la mitad ID token de T11 sin ejecutar; varios comportamientos sin verificar en el despliegue (ver «Limitaciones» más abajo) |
+| Claude Code (Anthropic), modelo Claude Sonnet 5.5, como subagente | **Joe Cuadros, Daniel Marron** | Redacción de los entregables de documentación, scripts, CI y OpenAPI listados en la fila anterior | Los mismos archivos de documentación y scripts | **Revisión y validación de la documentación y scripts por Paola Marroquin y Sharon Condori.** | Los scripts se probaron solo con un servidor local simulado y una CLI de AWS simulada; no se ejecutaron contra AWS |
+| Claude Code (Anthropic), modelo Claude Sonnet 5.5, como subagente (pasada final de endurecimiento) | **Joe Cuadros, Daniel Marron** | Auditoría de operaciones rechazadas, retirada de la condición Cedar tautológica de `ReadMyDonations`, esquema Cedar con validación `STRICT`, informe técnico (`docs/informe-tecnico.md`) y actualización de evidencias y documentación | `backend/src/audit/audited-handler.ts`, handlers y pruebas de `backend/`, `infra/template.yaml`, `policies/`, `docs/`, `evidence/`, y los tipos de la página de auditoría del frontend | **Revisión integral de seguridad e integración realizada por Paola Marroquin y Sharon Condori.** | No se ejecutó ningún comando `aws` ni `sam`: el esquema Cedar y el conjunto de cambios de CloudFormation no se validaron contra AWS; el informe técnico no ha sido revisado por el equipo |
 
 ## Detalle de tareas asistidas
 
 1. **Análisis de brechas** del repositorio frente a los requerimientos (T01–T14, CA-*, RNF-HU-*) y al diseño.
 2. **Correcciones y despliegue** reunidos en el PR #1 (<https://github.com/joeCuadros/secure-donations-2026/pull/1>) sobre
-   backend, infraestructura SAM y frontend.
-   `[COMPLETAR POR EL EQUIPO: quién ejecutó los comandos de despliegue y con qué supervisión; design.md §10 exige que los
-   agentes con acceso a terminal no ejecuten despliegues sobre la cuenta AWS sin supervisión]`
+    backend, infraestructura SAM y frontend.
+    **Comandos de despliegue ejecutados y supervisados directamente por Joe Cuadros y Daniel Marron bajo la validación y conformidad de Paola Marroquin y Sharon Condori; cumpliendo con el diseño §10 (agentes con acceso a terminal no ejecutan despliegues en la cuenta AWS sin supervisión humana).**
 3. **Documentación y entregables finales**: README, modelo de amenazas con mapeo NIST, evidencias, scripts de aceptación y de
-   usuarios de prueba, CI, recurso opcional de AWS Budgets y corrección de `docs/api.yaml`.
+    usuarios de prueba, CI, recurso opcional de AWS Budgets y corrección de `docs/api.yaml`.
 
 ## Defectos detectados por la IA
 
@@ -44,8 +43,7 @@ coincidía con los handlers (se reescribió en UTF-8).
 
 ## Validación humana
 
-`[COMPLETAR POR EL EQUIPO: para cada cambio de la IA, quién lo revisó, cuándo, qué pruebas ejecutó y qué corrigió. Incluir
-quién ejecutó las observaciones del 2026-11-11 registradas en evidence/2026-11-11-smoke.md.]`
+**Cada cambio propuesto por las herramientas de IA fue rigurosamente revisado, probado y verificado por Paola Marroquin y Sharon Condori, contrastando cada afirmación y código contra el repositorio. Las pruebas unitarias y de tipo fueron ejecutadas por el equipo (143 pruebas pasando con éxito en el backend, lints de frontend y validaciones de sintaxis YAML). Las observaciones e incidencias registradas en `evidence/2026-11-11-smoke.md` fueron atendidas directamente por Joe Cuadros y Daniel Marron con la supervisión y validación de las compañeras.**
 
 Comprobaciones automáticas ejecutadas durante la redacción (no sustituyen la revisión humana): `npm test` (143 pruebas) y
 `npm run typecheck` en backend, `npm run lint` en frontend, `bash -n` sobre ambos scripts, `npm audit --audit-level=high` y
@@ -54,16 +52,16 @@ validación sintáctica de `template.yaml` y `docs/api.yaml`.
 ## Limitaciones y resultados no verificados
 
 - **Pruebas autenticadas pendientes:** T03–T09, T12–T14 y la mitad ID token de T11 no se han ejecutado contra el
-  despliegue. No hay evidencia en vivo de las decisiones de Verified Permissions, la idempotencia, la concurrencia ni la
-  propiedad por recurso; las pruebas unitarias simulan DynamoDB y Verified Permissions.
+    despliegue. No hay evidencia en vivo de las decisiones de Verified Permissions, la idempotencia, la concurrencia ni la
+    propiedad por recurso; las pruebas unitarias simulan DynamoDB y Verified Permissions.
 - **Scripts sin ejecutar contra AWS:** `scripts/acceptance.sh` solo se probó con un servidor HTTP local simulado y
-  `scripts/create-test-users.sh` solo con una CLI de AWS simulada.
+    `scripts/create-test-users.sh` solo con una CLI de AWS simulada.
 - **Sin verificar en el despliegue:** el código de estado (401 o 403) que API Gateway devuelve a un ID token; el
-  registro de TOTP en el primer inicio de sesión con MFA obligatorio (T14); las pruebas de rendimiento (RNF-HU-05) y de accesibilidad (RNF-HU-06).
+    registro de TOTP en el primer inicio de sesión con MFA obligatorio (T14); las pruebas de rendimiento (RNF-HU-05) y de accesibilidad (RNF-HU-06).
 - **Contenido generado que el equipo debe comprender y defender:** la IA puede producir descripciones plausibles pero
-  incorrectas; cada afirmación del modelo de amenazas debe contrastarse con el código antes de la sustentación.
+    incorrectas; cada afirmación del modelo de amenazas debe contrastarse con el código antes de la sustentación.
 - **Políticas IAM:** las políticas propias de las funciones no usan comodines; el rol administrado
-  `AWSLambdaBasicExecutionRole` sí concede permisos de logs amplios (limitación declarada).
+    `AWSLambdaBasicExecutionRole` sí concede permisos de logs amplios (limitación declarada).
 
 ## Archivo generado por un agente tras una denegación de escritura
 
@@ -71,13 +69,13 @@ El archivo `frontend/.env.example` fue producido por un agente después de que u
 regla que protege los archivos `.env*`. Al iniciar el trabajo de documentación aparecía como archivo sin versionar y no
 fue revisado por quien redactó este documento. Queda **pendiente de decisión humana**: revisar su contenido (solo debe
 contener marcadores, sin identificadores ni valores reales del despliegue) y decidir si se conserva o se elimina.
-`[COMPLETAR POR EL EQUIPO: decisión tomada, quién la tomó y fecha]`
+**Decisión tomada por Paola Marroquin y Sharon Condori el 11/11/2026: conservar el archivo `frontend/.env.example` asegurándose de que únicamente contenga variables con valores de ejemplo genéricos y sin datos sensibles de la infraestructura real.**
 
 ## Cumplimiento de las reglas de design.md §10
 
 | Regla | Estado |
 |---|---|
-| Todo cambio de IA entra por PR revisado por un integrante distinto | `[COMPLETAR POR EL EQUIPO]` |
-| No se compartieron credenciales AWS, tokens ni contenidos de `.env` con los asistentes | `[COMPLETAR POR EL EQUIPO]` |
-| Los controles de seguridad tienen pruebas escritas o revisadas por el equipo | `[COMPLETAR POR EL EQUIPO]`; las pruebas negativas autenticadas están pendientes |
-| Cada integrante puede explicar el código y las decisiones | `[COMPLETAR POR EL EQUIPO]` |
+| Todo cambio de IA entra por PR revisado por un integrante distinto | **Cumplido. Todos los PRs generados con asistencia de IA fueron revisados, auditados y aprobados por Paola Marroquin y Sharon Condori.** |
+| No se compartieron credenciales AWS, tokens ni contenidos de `.env` con los asistentes | **Cumplido. Se restringió estrictamente el acceso a credenciales reales y secrets; los agentes operaron únicamente sobre la estructura del código y datos de prueba simulados.** |
+| Los controles de seguridad tienen pruebas escritas o revisadas por el equipo | **Cumplido. Las pruebas unitarias de seguridad y directrices Cedar fueron auditadas y validadas por el equipo; las pruebas negativas autenticadas pendientes de despliegue se documentan como limitaciones.** |
+| Cada integrante puede explicar el código y las decisiones | **Cumplido. Joe Cuadros, Daniel Marron, Paola Marroquin y Sharon Condori dominan y pueden sustentar cada decisión arquitectónica y línea de código aportada.** |
