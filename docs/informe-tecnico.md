@@ -10,7 +10,8 @@ simuladas. No hay pagos reales, datos de tarjeta ni cargos. El alcance cubre las
 más las extensiones HU-10 (auditoría) y HU-12 (autorización externalizada). Quedan fuera la postura de dispositivo, la
 evaluación continua de riesgo, ZTNA, WAF y los pagos reales.
 
-Despliegue verificado el 2026-11-11, región `us-east-2`.
+Despliegue verificado el 2026-11-11, región `us-east-2`. Estado documentado: rama `main` tras los pull requests #1 a #5
+(fusionados); el pull request #6 (figuras y secciones actualizadas del informe, solo documentación) está abierto.
 
 ## 2. Arquitectura desplegada y límites de confianza
 
@@ -18,7 +19,7 @@ Despliegue verificado el 2026-11-11, región `us-east-2`.
 flowchart TD
   U["Visitante / Donante / Gestor / Auditor<br/>(navegador, no confiable)"] -->|HTTPS| CF["CloudFront<br/>response headers policy: CSP, HSTS, nosniff"]
   CF -->|"OAC (SigV4)"| S3[("S3 privado<br/>SPA React")]
-  U -->|"Authorization Code + PKCE"| IDP["Cognito User Pool<br/>grupos DONANTE / GESTOR / AUDITOR<br/>TOTP por usuario (Policy Administrator)"]
+  U -->|"Authorization Code + PKCE"| IDP["Cognito User Pool<br/>grupos DONANTE / GESTOR / AUDITOR<br/>TOTP obligatorio (Policy Administrator)"]
   U -->|"Bearer access token"| APIG["API Gateway HTTP API<br/>JWT authorizer + scopes por ruta<br/>(PEP 1)"]
   APIG --> FN["10 funciones Lambda Node.js 24<br/>un rol IAM por función<br/>(PEP 2: claims verificados + decisión del PE)"]
   FN -->|IsAuthorized| AVP["Verified Permissions<br/>políticas Cedar (Policy Engine)"]
@@ -47,7 +48,7 @@ rol IAM por función. El navegador y la red no son confiables. El detalle STRIDE
 | AD-03 Transacciones simuladas | Estados simulados, sin datos de pago; la ruta de simulación existe solo en el stage `academic` (condición `IsAcademicStage`); la interfaz muestra «Simulación académica: no se ha realizado ningún cobro» |
 | AD-04 Backend autoritativo | Validación con Zod (`amountCents` entero entre 100 y 100000, `Idempotency-Key` UUID); importes en céntimos; `donorSub` solo del token |
 | AD-05 Idempotencia atómica | Reserva de clave y creación de la donación en un único `TransactWriteItems` condicionado |
-| AD-06 Cuenta Free plan | Una sola región; presupuesto de AWS Budgets como parámetro opcional (ver §10) |
+| AD-06 Cuenta Free plan | Una sola región; presupuesto de AWS Budgets como parámetro opcional, sin correo indicado en el despliegue (ver §11) |
 | AD-07 Tokens de vida corta | Access e ID token de 15 minutos; refresh token de 1 día con revocación habilitada |
 | AD-08 Autorización en dos niveles | Se implementó Verified Permissions en todas las rutas protegidas; no hay RBAC embebido paralelo (ver §9) |
 
@@ -73,15 +74,20 @@ Tablas completas en [threat-model.md](threat-model.md) §3.
 
 ## 5. Resultados de las pruebas T01–T14
 
-Ejecución con usuarios reales (dos DONANTE y un GESTOR, con MFA TOTP) el 2026-11-11: **11 PASS, 0 FAIL, 3 SKIPPED**
-(T10, T13 y T14 no son automatizables con `curl`); T13 se ejecutó después de forma manual y pasó. Detalle en
-[evidence/2026-11-11-acceptance.md](../evidence/2026-11-11-acceptance.md).
+Ejecución con usuarios reales (dos DONANTE y un GESTOR, con MFA TOTP) el 2026-11-11, en tres corridas de
+`scripts/acceptance.sh`: la primera dio **11 PASS, 0 FAIL, 3 SKIPPED**; la segunda, tras desplegar la auditoría de
+rechazos, el esquema `STRICT` y la política `ReadMyDonations`, el mismo resultado y sin regresión; la tercera, tras
+desplegar `GET /v1/projects/drafts`, **12 PASS, 0 FAIL, 3 SKIPPED**, porque suma T03b. Las omitidas (T10, T13 y T14) no
+son automatizables con `curl`; T13 se ejecutó después de forma manual y pasó. Ninguna corrida usó un usuario AUDITOR.
+Detalle en [evidence/2026-11-11-acceptance.md](../evidence/2026-11-11-acceptance.md). Además, el backend tiene 205
+pruebas unitarias Vitest en 9 archivos (`npm test`), que simulan DynamoDB y Verified Permissions.
 
 | ID | Estado | Resultado | Evidencia |
 |---|---|---|---|
 | T01 | PASS | 200 sin borradores | acceptance |
 | T02 | PASS | 401 sin token | acceptance |
 | T03 | PASS | 403 al donante que crea proyecto | acceptance |
+| T03b | PASS | `GET /v1/projects/drafts`: 403 al donante, 200 al gestor; el borrador aparece antes de publicarse y la respuesta no contiene `createdBy` | acceptance (tercera corrida) |
 | T04 | PASS | 400 con 0, 100001, 12.5, `"2500"` y sin `Idempotency-Key` | acceptance |
 | T05 | PASS | 201, `PENDIENTE_SIMULACION` | acceptance |
 | T06 | PASS | Mismo `donationId`; el historial creció en 1 | acceptance |
@@ -94,8 +100,10 @@ Ejecución con usuarios reales (dos DONANTE y un GESTOR, con MFA TOTP) el 2026-1
 | T13 | PASS | Token revocado: 200 hasta expirar, 401 tras la expiración | acceptance |
 | T14 | Pendiente | Captura manual pendiente | acceptance |
 
-**T10.** Solo evidencia estática: el IAM Policy Simulator no es utilizable en esta cuenta, porque la SCP de la
-organización hace que devuelva `explicitDeny` para cualquier acción.
+**T10.** Solo evidencia estática (política del rol de `ListProjectsFunction`): el IAM Policy Simulator no es utilizable
+en esta cuenta, porque la SCP de la organización hace que devuelva `explicitDeny` para cualquier acción.
+
+**T11.** El token alterado se rechaza con 401; el ID token, con **403** y no con el 401 que espera CA-03.2 (ver §10).
 
 **T13.** Con el mismo access token (vence a las 20:11:48 UTC): 19:56:48 dio 200; hacia las 19:57:00 se revocó el
 refresh token con `/oauth2/revoke` (200); a las 19:57:04, 19:57:34, 20:01:45, 20:02:58, 20:03:01 y 20:03:02 el token
@@ -105,6 +113,11 @@ el token revocado fue válido unos 15 minutos (CA-03.4, AD-07).
 
 **T14 (pendiente).** Falta la captura manual de un GESTOR sin segundo factor. Está verificado que el pool tiene
 `MfaConfiguration: ON`, solo TOTP y sin SMS, y CloudTrail muestra eventos `MfaRegister` en el primer inicio de sesión.
+No debe presentarse como superada hasta contar con la captura.
+
+**Borradores (HU-08).** Un GESTOR abre la pantalla «Borradores» (`/projects/drafts`, `GET /v1/projects/drafts`) y publica
+desde ella un proyecto creado antes; el registro de acceso de API Gateway muestra 401 sin token, 200 con el GESTOR y
+200 en la publicación posterior. T03b lo cubre en `scripts/acceptance.sh`.
 
 ## 6. Integridad e idempotencia
 
@@ -130,8 +143,9 @@ Con la auditoría de rechazos (§8), `ListMyDonationsFunction` y `ListAuditLogsF
 `AuditEvents`, y nada más. La función de borradores (`ListDraftProjectsFunction`, `GET /v1/projects/drafts`, HU-08)
 nace con ese mismo criterio: `Query` solo sobre `Projects/index/status-createdAt`, `PutItem` sobre `AuditEvents` y la
 política de Verified Permissions; sin escritura en `Projects`. Su acción Cedar `ListDraftProjects` es la séptima y
-se concede solo al grupo GESTOR. Estos cambios están en la plantilla, pero **no se han desplegado** ni verificado en
-AWS.
+se concede solo al grupo GESTOR. Estos cambios están desplegados: la segunda y la tercera corrida de aceptación se
+ejecutaron después de desplegarlos (§5). La restricción de los roles sigue demostrada solo de forma estática: T10 cubre
+únicamente a `ListProjectsFunction`, y el resto de los roles se verificó en la plantilla.
 
 ## 8. Observabilidad
 
@@ -139,11 +153,18 @@ AWS.
   con retención de 14 días; el stage de API Gateway tiene su propio log. No se registran cabeceras, tokens, cuerpos ni
   el `sub` (lo comprueban pruebas unitarias).
 - **`AuditEvents`.** Cada evento lleva `timestamp`, `requestId`, actor seudonimizado (`actor_` más 8 caracteres de un
-  SHA-256 del `sub`, o `actor_unknown` sin identidad verificada), acción, recurso y resultado. Tras el cambio de esta
-  etapa, los siete handlers protegidos registran también las operaciones rechazadas después de autenticar: `DENIED`
-  (401/403), `FAILURE` (400, 404, 409) y `ERROR` (5xx). Las consultas exitosas del historial y de la auditoría no se
-  registran. Un fallo al escribir el evento se anota en el log y no cambia la respuesta. Cubre CA-08.3, CA-10.2 y el
-  principio 7. Estado: pruebas unitarias; **pendiente** de verificar en el despliegue.
+  SHA-256 del `sub`, o `actor_unknown` sin identidad verificada), acción, recurso y resultado. Desde el PR #4, los siete
+  handlers protegidos (creación y publicación de proyectos, borradores, creación y simulación de donaciones, historial
+  propio y auditoría) registran también las operaciones rechazadas después de autenticar: `DENIED` (401/403),
+  `FAILURE` (400, 404, 409) y `ERROR` (5xx). Las consultas exitosas del historial, de los borradores y de la auditoría
+  no se registran, ni las solicitudes que API Gateway rechaza antes de invocar a Lambda (401 del authorizer, 429), que
+  solo quedan en el log de acceso del stage. Un fallo al escribir el evento se anota en el log y no cambia la
+  respuesta (mejor esfuerzo). Cubre CA-08.3, CA-10.2 y el principio 7.
+  Estado: verificado en el despliegue con una consulta directa al índice `AllAuditLogsIndex` tras la segunda corrida de
+  aceptación: los 35 eventos más recientes eran 17 `SUCCESS`, 15 `FAILURE` y 3 `DENIED`, y reproducen T08 con una
+  confirmación `SUCCESS` y nueve `FAILURE`. Esos eventos no contienen tokens, importes ni el `sub` en claro. La
+  repetición idempotente de T06 escribe un segundo evento `SUCCESS` para la misma donación. **No** se consultó
+  `GET /v1/audit` con un usuario AUDITOR (HU-10 sin ejercitar con un usuario real).
 - **CloudTrail.** Se usa el historial de eventos que AWS activa por defecto; la plantilla no define un trail propio.
 - Pendiente: las capturas de CloudWatch con un caso exitoso y uno rechazado (CA-NF07.2).
 
@@ -161,19 +182,22 @@ variante embebida con la que medir: la comparación es de diseño, no experiment
 | Revisión y validación | Pruebas unitarias reales | Esquema con validación `STRICT`; las pruebas unitarias simulan el motor |
 | Costo operativo | Sin dependencia adicional | Una llamada de red por solicitud; la latencia no se midió; si el servicio falla, las rutas protegidas devuelven 500 (falla cerrada) |
 
-T03, T09 y T12 pasaron en el despliegue con el motor externo (CA-12.2). Esta etapa ajustó la política de
+T03, T03b, T09 y T12 pasaron en el despliegue con el motor externo (CA-12.2). El PR #4 ajustó la política de
 `ReadMyDonations`: tenía la condición `principal.sub == resource.donorSub`, pero el handler construía ese recurso con el
 propio `sub` del token, de modo que comparaba al usuario consigo mismo. La política ahora solo exige el grupo
 `DONANTE`; la propiedad del historial es estructural (la consulta usa el `sub` del token como clave del índice
 `donorSub-createdAt` y no acepta identificadores del cliente), y hay una prueba unitaria que lo comprueba. En
 `SimulateDonation` la condición de propiedad se conserva, porque el recurso se lee de DynamoDB. El almacén pasa a modo
-`STRICT` con un esquema embebido; está probado de forma unitaria y **no se ha validado en AWS**.
+`STRICT` con un esquema embebido y las siete políticas, que se desplegaron así; la segunda y la tercera corrida de
+aceptación no mostraron regresión. La coherencia entre `policies/`, el esquema y `template.yaml` solo la comprueba una
+prueba unitaria; no se ejecutó `cedar validate`.
 
 ## 10. Desviaciones respecto del diseño
 
-1. **Región `us-east-2`** en lugar de `us-east-1`: una SCP de la organización deniega las demás regiones.
-2. **MFA TOTP obligatorio para todos**, más estricto que la matriz, donde el MFA del donante es opcional: con MFA
-   opcional el login administrado de Cognito no ofrece registrar TOTP.
+1. **Región `us-east-2`** en lugar de `us-east-1`: una SCP de la organización deniega las demás regiones; se cumple la
+   condición de usar una sola región.
+2. **MFA TOTP obligatorio para todos** (`MfaConfiguration: "ON"`), más estricto que la matriz, donde el MFA del donante
+   es opcional: con MFA opcional el login administrado de Cognito no ofrece registrar TOTP.
 3. **ID token como Bearer: 403, no 401** (CA-03.2): el authorizer acepta la firma y falla la comprobación de scope de la
    ruta.
 4. **Los access tokens llevan todos los scopes** del único app client; el control de rol lo ejerce Verified Permissions
@@ -190,11 +214,21 @@ propio `sub` del token, de modo que comparaba al usuario consigo mismo. La polí
 - Los tokens viven solo en memoria (CA-NF11.1). Al recargar, la SPA reanuda la sesión con un nuevo flujo PKCE si una
   bandera booleana de `sessionStorage` indica que hubo sesión en la pestaña; sin token ni identificador en el
   almacenamiento. Si la cookie de sesión de Cognito venció, el usuario ve el inicio de sesión de Cognito.
+- Carrera de idempotencia: dos solicitudes simultáneas con la misma clave y carga pueden dar 409 a la segunda en lugar de
+  repetir la respuesta (HU-05); no se probó en el despliegue.
+- La repetición idempotente escribe un segundo evento `SUCCESS` en `AuditEvents` para la misma donación, y la auditoría
+  es de mejor esfuerzo (ver §8).
+- La CSP usa un comodín en `connect-src` (`https://*.execute-api.us-east-2.amazonaws.com`) para no referenciar la API
+  concreta y evitar una dependencia circular con el CORS de la API.
+- La API no tiene una operación de edición de proyectos (solo crear, listar borradores y publicar), aunque la matriz de
+  roles de `requirements.md` menciona «editar».
+- Ninguna corrida de aceptación usó un usuario AUDITOR: HU-10 (consulta de auditoría) no se ejercitó con un usuario real.
+- Cuenta de AWS compartida por el equipo: el aislamiento entre integrantes depende de IAM y de la disciplina del equipo.
 - Pendientes, no hechos: medición de rendimiento (RNF-HU-05), evaluación de accesibilidad (RNF-HU-06), alerta de AWS
-  Budgets (el parámetro existe, pero no se indicó ningún correo), T14, la
-  demostración dinámica de T10 y los campos de revisión humana de `AI_USAGE.md`.
-- Los cambios de esta etapa (auditoría de rechazos, esquema `STRICT`, política de `ReadMyDonations`) solo tienen
-  pruebas unitarias; no se ejecutó `cedar validate` ni un conjunto de cambios de CloudFormation.
+  Budgets (el parámetro existe, pero no se indicó ningún correo), la captura de T14, la demostración dinámica de T10
+  (el IAM Policy Simulator no es utilizable en esta cuenta), las capturas de CloudWatch y los campos de revisión humana
+  de `AI_USAGE.md`.
+- No se ejecutó `cedar validate`; el esquema y las políticas se validaron al desplegar con el modo `STRICT`.
 
 ## 12. Respuestas a las preguntas de discusión
 
@@ -224,8 +258,10 @@ lista de revocación, que el diseño descarta por su costo.
 
 ## 13. Uso de IA
 
-Se usaron asistentes de código en el análisis, las correcciones, la documentación y esta etapa final. La declaración
-completa está en [AI_USAGE.md](../AI_USAGE.md); sus campos de revisión humana están **pendientes**.
+Se usaron asistentes de código en el análisis, las correcciones, la documentación y las etapas posteriores. Entraron por
+pull request los cambios #1 a #5 (fusionados) y el #6 (documentación, abierto). La declaración completa está en
+[AI_USAGE.md](../AI_USAGE.md); sus campos de participantes, revisores y fechas están **pendientes** de completar por el
+equipo.
 
 ## 14. Limpieza
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # -----------------------------------------------------------------------------
 # scripts/create-test-users.sh - Crea usuarios de prueba en el user pool de Cognito (un usuario por rol)
-# y, de forma opcional, exige TOTP a un usuario privilegiado.
+# y, solo si el pool usa MFA opcional, permite exigir TOTP a un usuario privilegiado.
 #
 # Funciona en AWS CloudShell y en Git Bash. Requiere AWS CLI v2 con credenciales temporales ya iniciadas
 # (por ejemplo `aws login` o CloudShell); el script nunca solicita ni guarda llaves de acceso.
@@ -168,18 +168,10 @@ cat <<MENSAJE
 Pasos siguientes
   1. Cada usuario inicia sesion en el frontend (URL en la salida FrontendUrl de la pila) con la contrasena temporal
      recibida por correo y define su contrasena definitiva.
-  2. Segundo factor (CA-11.1) para GESTOR y AUDITOR. El pool de usuarios tiene MFA opcional con TOTP, por lo que
-     el segundo factor se exige por usuario:
-       a) El usuario registra una aplicacion autenticadora (TOTP) y verifica el primer codigo. Si la interfaz
-          alojada de Cognito no ofrece ese registro con MFA opcional, el usuario puede registrarla con
-          'aws cognito-idp associate-software-token' y 'aws cognito-idp verify-software-token', usando su propio
-          access token (--access-token); no comparta ese token con terceros.
-       b) Un administrador ejecuta, para cada usuario privilegiado:
-            scripts/create-test-users.sh --region $REGION --stack $STACK_NAME --enforce-mfa <correo>
-          que equivale a:
-            aws cognito-idp admin-set-user-mfa-preference --region $REGION --user-pool-id $USER_POOL_ID \\
-              --username <correo> --software-token-mfa-settings Enabled=true,PreferredMfa=true
-  3. Mientras un usuario privilegiado no tenga TOTP activo, puede iniciar sesion solo con contrasena: confirme el
-     paso 2 antes de la demostracion y registre la evidencia de T14.
+  2. Segundo factor (CA-11.1). El pool de usuarios exige MFA TOTP a todos los usuarios: en ese primer inicio de
+     sesion, la interfaz alojada de Cognito muestra el codigo QR, el usuario lo registra en una aplicacion
+     autenticadora y verifica el primer codigo. Sin segundo factor no se emiten tokens.
+  3. Registre la evidencia de T14: un GESTOR que ingresa la contrasena y no el codigo TOTP no obtiene tokens.
   4. Para pruebas T09 y T12 necesita dos DONANTE (--donor y --donor2) y un GESTOR (--manager).
+  Nota: el modo --enforce-mfa solo es necesario si el pool se despliega con MFA opcional.
 MENSAJE
