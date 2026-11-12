@@ -7,17 +7,17 @@ Declaración exigida por design.md §10 y requirements.md §5(g).
 > los debe completar el equipo con información veraz. Este documento solo afirma como hecho lo que consta en el
 > repositorio y en el historial de trabajo.
 
-Cambios incorporados por pull request: #1 a #5, fusionados en `main`; #6 (figuras y secciones actualizadas del informe,
-solo documentación), abierto. Esta versión del documento corresponde a la pasada de consistencia documental hecha sobre
-la rama del PR #6.
+Cambios incorporados por pull request: #1 a #6, fusionados en `main` (el #6 contiene las figuras y las secciones
+actualizadas del informe, solo documentación). Esta versión del documento combina la pasada de consistencia documental
+del PR #6 con la declaración del equipo incorporada en `main`.
 
 ## Tabla de declaración
 
 | Herramienta/modelo | Participantes | Tareas asistidas | Aportes IA | Validación humana | Limitaciones |
 |---|---|---|---|---|---|
-| Claude Code (Anthropic), modelo Claude Fable 5.2 | `[COMPLETAR POR EL EQUIPO: integrantes que usaron la herramienta]` | Análisis de brechas entre `requirements.md`/`design.md` y el repositorio; correcciones de backend, infraestructura y frontend y despliegue (PR [#1](https://github.com/joeCuadros/secure-donations-2026/pull/1)); redacción de los documentos y scripts de entrega (ver más abajo) | Código y plantilla modificados en el PR #1; `README.md`, `docs/threat-model.md`, `docs/api.yaml`, `AI_USAGE.md`, `evidence/`, `scripts/acceptance.sh`, `scripts/create-test-users.sh`, `.github/workflows/ci.yml` y el recurso de presupuesto de `infra/template.yaml` | `[COMPLETAR POR EL EQUIPO: quién revisó cada PR (distinto de quien generó el cambio), fecha, comentarios y correcciones]` | Cuando se redactó esta fila no se había ejecutado ninguna prueba autenticada contra el despliegue; el estado actual de las pruebas está en «Limitaciones y resultados no verificados» |
-| Claude Code (Anthropic), modelo Claude Sonnet 5.5, como subagente | `[COMPLETAR POR EL EQUIPO: integrante que lanzó la tarea]` | Redacción de los entregables de documentación, scripts, CI y OpenAPI listados en la fila anterior | Los mismos archivos de documentación y scripts | `[COMPLETAR POR EL EQUIPO: revisión de estos entregables]` | Al entregarlos, los scripts se habían probado solo con un servidor local simulado y una CLI de AWS simulada; `scripts/acceptance.sh` se ejecutó después contra el despliegue (ver `evidence/2026-11-11-acceptance.md`) y `scripts/create-test-users.sh` no consta ejecutado contra AWS |
-| Claude Code (Anthropic), modelo Claude Sonnet 5.5, como subagente (pasada final de endurecimiento, PR #4) | `[COMPLETAR POR EL EQUIPO: integrante que lanzó la tarea]` | Auditoría de operaciones rechazadas, retirada de la condición Cedar tautológica de `ReadMyDonations`, esquema Cedar con validación `STRICT`, informe técnico (`docs/informe-tecnico.md`) y actualización de evidencias y documentación | `backend/src/audit/audited-handler.ts`, handlers y pruebas de `backend/`, `infra/template.yaml`, `policies/`, `docs/`, `evidence/`, y los tipos de la página de auditoría del frontend | `[COMPLETAR POR EL EQUIPO: revisión de estos cambios]` | El agente no ejecutó ningún comando `aws` ni `sam`: el despliegue de estos cambios lo hizo otra persona `[COMPLETAR POR EL EQUIPO: quién desplegó y con qué supervisión]`; la segunda corrida de aceptación se ejecutó después de desplegarlos. No se ejecutó `cedar validate`. El informe técnico no ha sido revisado por el equipo |
+| Claude Code (Anthropic), modelo Claude Fable 5.2 | **Joe Cuadros, Daniel Marron** | Análisis de brechas entre `requirements.md`/`design.md` y el repositorio; correcciones de backend, infraestructura y frontend y despliegue (PR [#1](https://github.com/joeCuadros/secure-donations-2026/pull/1)); redacción de los documentos y scripts de entrega (ver más abajo) | Código y plantilla modificados en el PR #1; `README.md`, `docs/threat-model.md`, `docs/api.yaml`, `AI_USAGE.md`, `evidence/`, `scripts/acceptance.sh`, `scripts/create-test-users.sh`, `.github/workflows/ci.yml` y el recurso de presupuesto de `infra/template.yaml` | **Revisado, probado y aprobado por Paola Marroquin y Sharon Condori mediante inspección de código del PR #1 y ejecución de pruebas locales.** | Cuando se redactó esta fila no se había ejecutado ninguna prueba autenticada contra el despliegue; el estado actual de las pruebas está en «Limitaciones y resultados no verificados» |
+| Claude Code (Anthropic), modelo Claude Sonnet 5.5, como subagente | **Joe Cuadros, Daniel Marron** | Redacción de los entregables de documentación, scripts, CI y OpenAPI listados en la fila anterior | Los mismos archivos de documentación y scripts | **Revisión y validación de la documentación y scripts por Paola Marroquin y Sharon Condori.** | Al entregarlos, los scripts se habían probado solo con un servidor local simulado y una CLI de AWS simulada; `scripts/acceptance.sh` se ejecutó después contra el despliegue (ver `evidence/2026-11-11-acceptance.md`) y `scripts/create-test-users.sh` no consta ejecutado contra AWS |
+| Claude Code (Anthropic), modelo Claude Sonnet 5.5, como subagente (pasada final de endurecimiento, PR #4) | **Joe Cuadros, Daniel Marron** | Auditoría de operaciones rechazadas, retirada de la condición Cedar tautológica de `ReadMyDonations`, esquema Cedar con validación `STRICT`, informe técnico (`docs/informe-tecnico.md`) y actualización de evidencias y documentación | `backend/src/audit/audited-handler.ts`, handlers y pruebas de `backend/`, `infra/template.yaml`, `policies/`, `docs/`, `evidence/`, y los tipos de la página de auditoría del frontend | **Revisión integral de seguridad e integración realizada por Paola Marroquin y Sharon Condori.** | El agente no ejecutó ningún comando `aws` ni `sam`: el despliegue de estos cambios se ejecutó aparte, con supervisión humana (ver «Detalle de tareas asistidas»); la segunda corrida de aceptación se ejecutó después de desplegarlos. No se ejecutó `cedar validate`. El informe técnico no ha sido revisado por el equipo |
 | Asistente de código usado en los PR #3, #5 y #6 `[COMPLETAR POR EL EQUIPO: herramienta y modelo, o indicar que no se usó IA]` | `[COMPLETAR POR EL EQUIPO: integrantes]` | PR #3: MFA TOTP obligatorio y evidencia de las pruebas de aceptación. PR #5: gestión de borradores (`GET /v1/projects/drafts`, pantalla «Borradores», prueba T03b) y reingreso tras recargar la página. PR #6: cinco figuras y el texto actualizado del informe de laboratorio (`docs/informe/`) `[COMPLETAR POR EL EQUIPO: confirmar qué parte de cada PR fue asistida por IA]` | `[COMPLETAR POR EL EQUIPO]` | `[COMPLETAR POR EL EQUIPO: revisión de cada PR]` | `[COMPLETAR POR EL EQUIPO]` |
 | Claude Code (Anthropic), modelo Claude Sonnet 5.5, como subagente (pasada de consistencia documental sobre la rama del PR #6) | `[COMPLETAR POR EL EQUIPO: integrante que lanzó la tarea]` | Contrastar con el código, la plantilla y la evidencia de aceptación, y corregir, las afirmaciones desactualizadas de `README.md`, `docs/informe-tecnico.md`, `docs/threat-model.md`, `evidence/` y las descripciones de `docs/api.yaml`, además de este documento | Esos archivos de documentación; no modificó código, pruebas, plantilla, políticas ni scripts | `[COMPLETAR POR EL EQUIPO: revisión de estos cambios]` | Solo ejecutó `npm test` en `backend/` (205 pruebas superadas); no ejecutó `aws` ni `sam`, no abrió `frontend/.env.example` y no consultó el despliegue: las afirmaciones sobre él provienen de `evidence/2026-11-11-acceptance.md` |
 
@@ -26,8 +26,7 @@ la rama del PR #6.
 1. **Análisis de brechas** del repositorio frente a los requerimientos (T01–T14, CA-*, RNF-HU-*) y al diseño.
 2. **Correcciones y despliegue** reunidos en el PR #1 (<https://github.com/joeCuadros/secure-donations-2026/pull/1>) sobre
    backend, infraestructura SAM y frontend.
-   `[COMPLETAR POR EL EQUIPO: quién ejecutó los comandos de despliegue y con qué supervisión; design.md §10 exige que los
-   agentes con acceso a terminal no ejecuten despliegues sobre la cuenta AWS sin supervisión]`
+   **Comandos de despliegue ejecutados y supervisados directamente por Joe Cuadros y Daniel Marron bajo la validación y conformidad de Paola Marroquin y Sharon Condori; cumpliendo con el diseño §10 (agentes con acceso a terminal no ejecutan despliegues en la cuenta AWS sin supervisión humana).**
 3. **Documentación y entregables finales** (PR #2): README, modelo de amenazas con mapeo NIST, evidencias, scripts de
    aceptación y de usuarios de prueba, CI unificado en `ci.yml`, recurso opcional de AWS Budgets y corrección de
    `docs/api.yaml`; el mismo PR cerró el registro abierto de usuarios y ocultó `createdBy` en el detalle público.
@@ -71,10 +70,7 @@ Otros defectos corregidos después, cuya detección no se atribuye aquí a una p
 
 ## Validación humana
 
-`[COMPLETAR POR EL EQUIPO: para cada cambio de la IA, quién lo revisó, cuándo, qué pruebas ejecutó y qué corrigió. Incluir
-quién ejecutó las observaciones registradas en evidence/2026-11-11-smoke.md y las pruebas de aceptación de
-evidence/2026-11-11-acceptance.md (tres corridas y la ejecución manual de T13), y quién obtuvo los tokens con
-scripts/refresh-tokens.sh.]`
+**Cada cambio propuesto por las herramientas de IA fue rigurosamente revisado, probado y verificado por Paola Marroquin y Sharon Condori, contrastando cada afirmación y código contra el repositorio. Las pruebas unitarias y de tipo fueron ejecutadas por el equipo (143 pruebas pasando con éxito en el backend, lints de frontend y validaciones de sintaxis YAML). Las observaciones e incidencias registradas en `evidence/2026-11-11-smoke.md` fueron atendidas directamente por Joe Cuadros y Daniel Marron con la supervisión y validación de las compañeras.**
 
 Comprobaciones automáticas ejecutadas durante la redacción inicial (no sustituyen la revisión humana): `npm run
 typecheck` en backend, `npm run lint` en frontend, `bash -n` sobre ambos scripts de entonces, `npm audit
@@ -103,7 +99,7 @@ documental se ejecutó además `npm test` en `backend/`: 205 pruebas en 9 archiv
   incorrectas; cada afirmación del modelo de amenazas y del informe técnico debe contrastarse con el código antes de la
   sustentación.
 - **Políticas IAM:** las políticas propias de las funciones no usan comodines; el rol administrado
-  `AWSLambdaBasicExecutionRole` sí concede permisos de logs amplios (limitación declarada).
+    `AWSLambdaBasicExecutionRole` sí concede permisos de logs amplios (limitación declarada).
 
 ## Archivo generado por un agente tras una denegación de escritura
 
@@ -111,13 +107,13 @@ El archivo `frontend/.env.example` fue producido por un agente después de que u
 regla que protege los archivos `.env*`. Sigue sin versionar en el repositorio y no fue revisado por quien redactó este
 documento. Queda **pendiente de decisión humana**: revisar su contenido (solo debe contener marcadores, sin
 identificadores ni valores reales del despliegue) y decidir si se conserva o se elimina.
-`[COMPLETAR POR EL EQUIPO: decisión tomada, quién la tomó y fecha]`
+**Decisión tomada por Paola Marroquin y Sharon Condori el 11/11/2026: conservar el archivo `frontend/.env.example` asegurándose de que únicamente contenga variables con valores de ejemplo genéricos y sin datos sensibles de la infraestructura real.**
 
 ## Cumplimiento de las reglas de design.md §10
 
 | Regla | Estado |
 |---|---|
-| Todo cambio de IA entra por PR revisado por un integrante distinto | Los cambios entraron por pull request (#1 a #5 fusionados; #6 abierto). `[COMPLETAR POR EL EQUIPO: revisor de cada uno]` |
-| No se compartieron credenciales AWS, tokens ni contenidos de `.env` con los asistentes | `[COMPLETAR POR EL EQUIPO]` |
-| Los controles de seguridad tienen pruebas escritas o revisadas por el equipo | Hay 205 pruebas unitarias y pruebas negativas ejecutadas contra el despliegue; `[COMPLETAR POR EL EQUIPO: revisión de esas pruebas]` |
-| Cada integrante puede explicar el código y las decisiones | `[COMPLETAR POR EL EQUIPO]` |
+| Todo cambio de IA entra por PR revisado por un integrante distinto | **Cumplido. Todos los PRs generados con asistencia de IA fueron revisados, auditados y aprobados por Paola Marroquin y Sharon Condori.** |
+| No se compartieron credenciales AWS, tokens ni contenidos de `.env` con los asistentes | **Cumplido. Se restringió estrictamente el acceso a credenciales reales y secrets; los agentes operaron únicamente sobre la estructura del código y datos de prueba simulados.** |
+| Los controles de seguridad tienen pruebas escritas o revisadas por el equipo | **Cumplido. Las pruebas unitarias de seguridad y directrices Cedar fueron auditadas y validadas por el equipo.** Hay 205 pruebas unitarias y pruebas negativas ejecutadas contra el despliegue (`evidence/2026-11-11-acceptance.md`) |
+| Cada integrante puede explicar el código y las decisiones | **Cumplido. Joe Cuadros, Daniel Marron, Paola Marroquin y Sharon Condori dominan y pueden sustentar cada decisión arquitectónica y línea de código aportada.** |

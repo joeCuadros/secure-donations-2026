@@ -50,6 +50,36 @@ export const ProjectDetail = () => {
     }
   }, [id, navigate, toast]);
 
+  const handleDonationAmountChange = (rawValue: string) => {
+    const normalized = rawValue.replace(",", ".");
+
+    if (normalized === "") {
+      setDonationAmount("");
+      return;
+    }
+
+    // Solo permite numeros entre 1 y 1000 con maximo 2 decimales
+    if (!/^[1-9]\d{0,3}(\.\d{0,2})?$/.test(normalized)) return;
+
+    const numericValue = Number(normalized);
+    if (numericValue > 1000) return;
+
+    setDonationAmount(normalized);
+  };
+
+  const handleDonationAmountBlur = () => {
+    if (!donationAmount) return;
+
+    const numericValue = Number(donationAmount);
+    if (Number.isNaN(numericValue) || numericValue < 1) {
+      setDonationAmount("1.00");
+      return;
+    }
+
+    const clamped = Math.min(1000, Math.max(1, numericValue));
+    setDonationAmount(clamped.toFixed(2));
+  };
+
   useEffect(() => {
     // Carga inicial de datos: la actualización de estado ocurre tras esperar la respuesta de la API.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -207,13 +237,15 @@ export const ProjectDetail = () => {
                       <input
                         id="donationAmount"
                         name="donationAmount"
-                        type="number"
-                        min="0.01"
-                        step="0.01"
+                        type="text"
                         inputMode="decimal"
                         required
+                        pattern="^(1000(\.0{1,2})?|[1-9]\d{0,2}(\.\d{1,2})?)$"
+                        title="Ingresa un monto válido entre 1.00 y 1000.00 (máximo 2 decimales)"
+                        autoComplete="off"
                         value={donationAmount}
-                        onChange={(event) => setDonationAmount(event.target.value)}
+                        onChange={(event) => handleDonationAmountChange(event.target.value)}
+                        onBlur={handleDonationAmountBlur}
                         placeholder="50.00"
                         className="w-full rounded-xl border border-slate-300 py-3 pl-11 pr-4 text-base outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                       />
