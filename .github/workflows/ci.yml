@@ -1,7 +1,8 @@
 name: CI
 
 # CA-NF08.1: lint, typecheck, pruebas y build en cada pull request y en cada push a main.
-# No hay paso de despliegue ni credenciales de AWS: el despliegue se hace manualmente (ver README.md).
+# No hay paso de despliegue ni credenciales de AWS: el despliegue se hace manualmente con scripts/deploy.sh (ver README.md);
+# la SCP de la organizacion impide federar GitHub Actions con la cuenta por OIDC.
 on:
   push:
     branches: ["main"]
